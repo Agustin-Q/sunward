@@ -28,6 +28,12 @@ npm run fixtures      # regenerate all pvlib/numpy reference values (pip install
 
 ## Ground rules
 
+0. **The Buenos Aires and Alicante integration tests are mandatory** (user requirement). They live
+   in `src/core/__tests__/integration.test.ts` and `MANDATORY_SITES`, and the reference generator
+   asserts they exist. Never remove, skip, `.only` around or loosen them. If a change makes them fail,
+   fix the change. Update the reference only when the agreed model itself changes, and say so to the
+   user. `npm run check` runs them twice: in the full suite and again via `npm run test:mandatory`.
+
 1. **All calculations live in `src/core/`. Keep it pure:** no DOM, no fetch, no globals. UI code
    only calls into it.
 2. **Every calculation must be unit-tested.** New formulas get tests against pvlib-python values

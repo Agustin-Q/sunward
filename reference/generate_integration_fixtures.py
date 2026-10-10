@@ -39,6 +39,10 @@ def svf(prof, tilt, az, n=3600):
     H = np.pi / 2 - np.maximum(np.radians(horizon_at(prof, phi)), e_plane)
     return float(np.mean(np.cos(S) * np.sin(H) ** 2 + np.sin(S) * c * (H - np.sin(H) * np.cos(H))))
 
+# MANDATORY sites (user requirement): never remove Buenos Aires or Alicante.
+MANDATORY = ("buenosAires", "alicante")
+assert all(k in SITES for k in MANDATORY), "Buenos Aires and Alicante are mandatory integration sites"
+
 out = {"meta": {"pvlib": pvlib.__version__, "linkeTurbidity": TL, "albedo": ALBEDO, "kWp": KWP, "performanceRatio": PR,
                 "transposition": "haydavies"}, "sites": {}}
 

@@ -16,6 +16,36 @@ const system = { kWp: fx.meta.kWp, performanceRatio: fx.meta.performanceRatio };
 
 type Key = keyof typeof fx.sites;
 const keys = Object.keys(fx.sites) as Key[];
+
+/**
+ * MANDATORY: Buenos Aires and Alicante must always be part of the integration
+ * suite (user requirement, docs/REQUIREMENTS.md). Never remove, skip or loosen them.
+ */
+export const MANDATORY_SITES = ["buenosAires", "alicante"] as const;
+
+describe("mandatory integration sites", () => {
+  it.each(MANDATORY_SITES)("%s is present in the reference data with every result", (k) => {
+    const ref = (fx.sites as Record<string, (typeof fx.sites)[Key]>)[k];
+    expect(ref, `${k} missing from integration.json: regenerate with reference/generate_integration_fixtures.py`).toBeDefined();
+    expect(ref.optimum.monthly).toHaveLength(12);
+    expect(ref.current.monthly).toHaveLength(12);
+    expect(ref.terrain.currentMonthly).toHaveLength(12);
+    expect(Number.isFinite(ref.lossAnnualPct)).toBe(true);
+    expect(Number.isFinite(ref.energyCurrentKWh)).toBe(true);
+  });
+  it("Buenos Aires and Alicante are at the right places", () => {
+    expect(fx.sites.buenosAires.lat).toBeCloseTo(-34.6037, 3);
+    expect(fx.sites.buenosAires.lon).toBeCloseTo(-58.3816, 3);
+    expect(fx.sites.alicante.lat).toBeCloseTo(38.3452, 3);
+    expect(fx.sites.alicante.lon).toBeCloseTo(-0.481, 3);
+  });
+  it("this file does not skip or isolate any test", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    const forbidden = ["describe" + ".skip", "it" + ".skip", "describe" + ".only", "it" + ".only", "it" + ".todo", "test" + ".skip", "x" + "it(", "x" + "describe("];
+    for (const f of forbidden) expect(src.includes(f), `found ${f}`).toBe(false);
+  });
+});
 const azDiff = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 
 describe.each(keys)("full calculation: %s", (key) => {
