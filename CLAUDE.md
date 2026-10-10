@@ -76,6 +76,13 @@ npm run fixtures      # regenerate all pvlib/numpy reference values (pip install
 9. **UI copy:** plain and specific, from the user's side ("Set to optimal", not "Apply optimum").
    Colours come from the CSS tokens in `src/ui/styles.css`, defined for both light and dark themes.
 
+## Repository and deployment
+
+- GitHub: `Agustin-Q/sunward` (public), default branch `main`.
+- Live: https://agustin-q.github.io/sunward/, deployed by `.github/workflows/pages.yml` on every push to
+  `main`. Tests must pass first; a red check blocks the deploy.
+- The build is one self-contained `index.html` with relative assets, so it works under `/sunward/`.
+
 ## Where things are
 
 ```

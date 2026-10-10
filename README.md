@@ -1,5 +1,7 @@
 # Sunward — solar panel tilt & direction planner
 
+**Live app:** https://agustin-q.github.io/sunward/
+
 Finds the fixed tilt and azimuth that collect the most sunlight over a year at a site, estimates
 monthly / daily / annual irradiance on the panel, and shows how much your current orientation loses.
 Runs entirely in the browser.
@@ -74,6 +76,15 @@ and typed coordinates. All calculations work the same.
 Implement `WeatherSource` in `src/core/weather.ts` (`hour()` and `year()` returning GHI/DNI/DHI plus sun
 position) and mark it `available: true`. Nothing else changes; the debug view traces whatever the source
 records.
+
+## Deployment
+
+Every push to `main` runs `.github/workflows/pages.yml`:
+1. `npm run check` (types, all tests, and the mandatory Buenos Aires / Alicante integration tests again)
+2. `npm run build`
+3. Deploy `dist/` to GitHub Pages
+
+A failing test blocks the deploy. Pages must be set to **Source: GitHub Actions** (Settings → Pages).
 
 ## Docs
 
