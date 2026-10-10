@@ -25,7 +25,8 @@
    - **PVGIS TMY**: best for Europe, but no browser CORS, so it needs a small proxy (for example a
      Cloudflare Worker) or a pre-fetched file.
    - Implement through `WeatherSource`; nothing else should change.
-3. **Horizon shading** from the PVGIS horizon profile (terrain), and optionally user-drawn obstacles.
+3. **Terrain shading**: planned and decided, see `docs/plans/terrain-shading.md`. Terrain only, full
+   diffuse model, sun-path chart.
 4. **Linke turbidity by location**: a small monthly TL table (coarse grid) bundled, instead of the
    single default of 3.
 5. **Incidence-angle losses and temperature model** (pvlib `iam.physical`, the Faiman model) for

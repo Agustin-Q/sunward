@@ -47,8 +47,9 @@ this file wins over guesses.
 | Extras for v1 | **kWh from system size** and the **tilt × azimuth heatmap** |
 | Debug view | Added at the user's request before the build started |
 | Settings | Persist in localStorage, and shareable via the query string (added after v1) |
+| Terrain shading (planned) | Horizon from terrain only; full diffuse model; sun-path chart. See `docs/plans/terrain-shading.md` |
 
-Not chosen for v1: horizon shading (PVGIS terrain), seasonal optima, tracking mounts.
+Not chosen for v1: seasonal optima, tracking mounts. Terrain shading is planned next.
 
 ## Answers given to the user (keep consistent)
 

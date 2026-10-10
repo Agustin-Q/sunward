@@ -11,6 +11,7 @@ Read these before changing things:
 - `docs/CALCULATIONS.md`: every formula, its source, and how it maps to pvlib.
 - `docs/ARCHITECTURE.md`: modules, data flow, settings and URL state, deployment targets and sandbox limits.
 - `docs/ROADMAP.md`: what is done, what is next, and known caveats.
+- `docs/plans/`: agreed plans for upcoming features (start with `terrain-shading.md`).
 
 ## Commands
 
