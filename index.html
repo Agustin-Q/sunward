@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sunward Panel Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="6" fill="var(--accent)"/><g stroke="var(--accent)" stroke-width="2" stroke-linecap="round"><path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M6.8 25.2l2.8-2.8M22.4 9.6l2.8-2.8"/></g></svg>
+      <div>
+        <h1>Sunward</h1>
+        <p class="tag">Best tilt and direction for solar panels, and what yours costs you</p>
+      </div>
+    </div>
+    <div class="top-actions">
+    <button id="btn-share" class="btn ghost small" title="Copies a link with all current settings">Copy share link</button>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button role="tab" id="tab-results" aria-selected="true" data-tab="results">Results</button>
+      <button role="tab" id="tab-heatmap" aria-selected="false" data-tab="heatmap">Heatmap</button>
+      <button role="tab" id="tab-debug" aria-selected="false" data-tab="debug">Debug</button>
+    </nav>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="side">
+      <section class="panel" aria-labelledby="loc-h">
+        <h2 id="loc-h" class="eyebrow">Location</h2>
+        <div class="map-wrap">
+          <div id="map" aria-label="Satellite map of the site"></div>
+          <div id="map-fallback" class="map-fallback" hidden>
+            <p><strong>Satellite map unavailable here.</strong> This viewer blocks outside map imagery. Open the standalone file in a normal browser for the map, GPS and address search. Directions are shown on the compass below.</p>
+          </div>
+        </div>
+        <div class="row">
+          <button id="btn-geo" class="btn">Use my location</button>
+          <form id="search-form" class="search" role="search">
+            <input id="search" type="search" placeholder="Search an address" aria-label="Search an address">
+            <button class="btn ghost" type="submit">Find</button>
+          </form>
+        </div>
+        <p id="loc-msg" class="msg" role="status"></p>
+        <div class="grid3">
+          <label>Latitude<input id="lat" type="number" step="0.0001" min="-89.9" max="89.9" inputmode="decimal"></label>
+          <label>Longitude<input id="lon" type="number" step="0.0001" min="-180" max="180" inputmode="decimal"></label>
+          <label>Altitude (m)<input id="alt" type="number" step="1" min="-400" max="8800" inputmode="numeric"></label>
+        </div>
+        <p class="hint">Drag the pin on the map to move it. Altitude fills in automatically when the map is available.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="panel-h">
+        <h2 id="panel-h" class="eyebrow">Your panel</h2>
+        <div class="orient">
+          <div class="dial-wrap">
+            <svg id="compass" viewBox="-110 -110 220 220" role="slider" tabindex="0" aria-label="Panel direction (azimuth)" aria-valuemin="0" aria-valuemax="359"></svg>
+            <div class="dial-read" id="dial-read" aria-hidden="true"></div>
+            <div class="legend-inline"><span class="key key-you"></span>Yours <span class="key key-opt"></span>Optimal</div>
+          </div>
+          <div class="sliders">
+            <label for="tilt">Tilt <output id="tilt-out"></output></label>
+            <input id="tilt" type="range" min="0" max="90" step="1">
+            <svg id="tilt-view" viewBox="0 0 160 70" aria-hidden="true"></svg>
+            <label for="az">Facing <output id="az-out"></output></label>
+            <input id="az" type="range" min="0" max="359" step="1">
+            <button id="btn-use-opt" class="btn ghost small">Set to optimal</button>
+          </div>
+        </div>
+        <div class="grid2">
+          <label>System size (kWp)<input id="kwp" type="number" step="0.1" min="0" max="10000"></label>
+          <label>Performance ratio<input id="pr" type="number" step="0.01" min="0.1" max="1"></label>
+        </div>
+      </section>
+
+      <details class="panel model" id="model-panel">
+        <summary class="eyebrow">Model settings</summary>
+        <label>Weather data
+          <select id="source"></select>
+        </label>
+        <p id="source-desc" class="hint"></p>
+        <div class="grid2">
+          <label>Linke turbidity<input id="tl" type="number" step="0.1" min="1" max="8"></label>
+          <label>Ground albedo<input id="albedo" type="number" step="0.01" min="0" max="1"></label>
+        </div>
+        <label>Diffuse-light model
+          <select id="transp">
+            <option value="haydavies">Hay-Davies (sun-ward glow + sky)</option>
+            <option value="isotropic">Isotropic (uniform sky)</option>
+          </select>
+        </label>
+      </details>
+    </aside>
+
+    <div class="content">
+      <div id="busy" class="busy" role="status" hidden>Calculating a year of sunlight…</div>
+
+      <section id="view-results" class="view" role="tabpanel" aria-labelledby="tab-results">
+        <div class="summary">
+          <div class="stat stat-opt">
+            <span class="stat-label">Optimal</span>
+            <span class="stat-value" id="s-opt">–</span>
+            <span class="stat-sub" id="s-opt-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Yours</span>
+            <span class="stat-value" id="s-you">–</span>
+            <span class="stat-sub" id="s-you-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">You lose</span>
+            <span class="stat-value" id="s-loss">–</span>
+            <span class="stat-sub" id="s-loss-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Electricity / year</span>
+            <span class="stat-value" id="s-kwh">–</span>
+            <span class="stat-sub" id="s-kwh-sub"></span>
+          </div>
+        </div>
+        <p class="caveat" id="caveat"></p>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>Sunlight on the panel by month</h3>
+            <div class="seg" role="radiogroup" aria-label="Unit">
+              <button role="radio" aria-checked="true" data-unit="month">kWh/m² month</button>
+              <button role="radio" aria-checked="false" data-unit="day">kWh/m² day</button>
+              <button role="radio" aria-checked="false" data-unit="kwh">kWh electricity</button>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="chart-monthly" aria-label="Monthly sunlight, optimal vs yours"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Loss vs optimal by month</h3><span class="hint">Below zero means your panel beats the yearly optimum that month.</span></div>
+          <div class="chart-box short"><canvas id="chart-loss" aria-label="Monthly loss percent"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Monthly table</h3></div>
+          <div class="table-scroll"><table id="tbl-monthly" class="data"></table></div>
+        </div>
+      </section>
+
+      <section id="view-heatmap" class="view" role="tabpanel" aria-labelledby="tab-heatmap" hidden>
+        <div class="card">
+          <div class="card-head"><h3>Annual sunlight as % of the best orientation</h3><span class="hint">Tap a cell to set your panel to it.</span></div>
+          <div class="heat-scroll"><canvas id="heatmap" aria-label="Heatmap of tilt and azimuth"></canvas></div>
+          <div id="heat-tip" class="tip" hidden></div>
+          <div class="heat-legend" id="heat-legend"></div>
+        </div>
+      </section>
+
+      <section id="view-debug" class="view" role="tabpanel" aria-labelledby="tab-debug" hidden>
+        <div class="card">
+          <div class="card-head"><h3>One hour, every step</h3></div>
+          <div class="row wrap">
+            <label>Date <input id="dbg-date" type="date" min="2025-01-01" max="2025-12-31"></label>
+            <label>Hour (UTC) <input id="dbg-hour" type="number" min="0" max="23" step="1"></label>
+            <label>Orientation
+              <select id="dbg-orient"><option value="you">Yours</option><option value="opt">Optimal</option></select>
+            </label>
+            <span class="hint" id="dbg-solar"></span>
+          </div>
+          <p class="hint">The reference year is 2025, sampled at the middle of each hour (hh:30 UTC). Values come from the same functions the results use.</p>
+          <div id="dbg-steps" class="steps"></div>
+          <div class="row wrap">
+            <button id="btn-pvlib" class="btn ghost small">Copy pvlib check for this hour</button>
+            <span id="pvlib-msg" class="msg" role="status"></span>
+          </div>
+          <pre id="pvlib-code" class="code" hidden></pre>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>That day, hour by hour</h3>
+            <button id="btn-csv" class="btn ghost small">Download full year (CSV)</button>
+          </div>
+          <div class="table-scroll"><table id="tbl-day" class="data dense"></table></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Totals, optimizer, loss and electricity</h3></div>
+          <div id="dbg-totals" class="steps"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer class="foot">
+    Sun position: NREL SPA via @yogur/solpos. Clear sky: Ineichen-Perez. Diffuse light: Hay-Davies. Every formula is unit-tested against pvlib-python.
+    <span id="attrib"></span>
+  </footer>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
