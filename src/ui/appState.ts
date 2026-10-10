@@ -26,6 +26,8 @@ export interface AppState {
   dbgDate: string;
   dbgHour: number;
   dbgOrient: DebugOrientation;
+  /** Terrain shading: on/off and panel height above ground (m). The profile itself is data, cached separately. */
+  horizon: { enabled: boolean; panelHeight: number };
 }
 
 export const DEFAULTS: AppState = {
@@ -40,6 +42,7 @@ export const DEFAULTS: AppState = {
   dbgDate: "2025-06-21",
   dbgHour: 12,
   dbgOrient: "you",
+  horizon: { enabled: false, panelHeight: 0 },
 };
 
 export const STORE_KEY = "sunward.v1";
@@ -56,7 +59,7 @@ const AVAILABLE_SOURCES = WEATHER_SOURCES.filter((s) => s.available).map((s) => 
 /** Validate and complete any (possibly partial, possibly hostile) settings object. */
 export function sanitize(raw: unknown, base: AppState = DEFAULTS): AppState {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
-  const site = r.site ?? {}, params = r.params ?? {}, you = r.you ?? {}, sys = r.sys ?? {};
+  const site = r.site ?? {}, params = r.params ?? {}, you = r.you ?? {}, sys = r.sys ?? {}, hz = r.horizon ?? {};
   return {
     site: {
       lat: num(site.lat, -89.9, 89.9, base.site.lat),
@@ -83,6 +86,10 @@ export function sanitize(raw: unknown, base: AppState = DEFAULTS): AppState {
     dbgDate: isDate2025(r.dbgDate) ? r.dbgDate : base.dbgDate,
     dbgHour: Math.round(num(r.dbgHour, 0, 23, base.dbgHour)),
     dbgOrient: oneOf(r.dbgOrient, ["you", "opt"] as const, base.dbgOrient),
+    horizon: {
+      enabled: typeof hz.enabled === "boolean" ? hz.enabled : hz.enabled === "1" ? true : hz.enabled === "0" ? false : base.horizon.enabled,
+      panelHeight: num(hz.panelHeight, 0, 300, base.horizon.panelHeight),
+    },
   };
 }
 
@@ -97,13 +104,18 @@ export const QUERY_KEYS = {
   tl: "tl", albedo: "alb", transp: "tm", source: "src",
   unit: "unit", tab: "tab",
   dbgDate: "dd", dbgHour: "dh", dbgOrient: "do",
+  horizonOn: "hm", horizonHeight: "hh", horizonProfile: "hp",
 } as const;
 
 const r5 = (x: number) => String(Number(x.toFixed(5)));
 const r2 = (x: number) => String(Number(x.toFixed(2)));
 
-/** Encode settings as a query string (without the leading "?"). */
-export function toQuery(s: AppState): string {
+/**
+ * Encode settings as a query string (without the leading "?").
+ * `horizonProfile` is the encoded terrain profile (see encodeProfile) so a
+ * shared link carries it and the receiver needs no elevation download.
+ */
+export function toQuery(s: AppState, horizonProfile?: string): string {
   const q = new URLSearchParams();
   const K = QUERY_KEYS;
   q.set(K.lat, r5(s.site.lat));
@@ -122,6 +134,9 @@ export function toQuery(s: AppState): string {
   q.set(K.dbgDate, s.dbgDate);
   q.set(K.dbgHour, String(s.dbgHour));
   q.set(K.dbgOrient, s.dbgOrient);
+  q.set(K.horizonOn, s.horizon.enabled ? "1" : "0");
+  q.set(K.horizonHeight, String(Number(s.horizon.panelHeight.toFixed(1))));
+  if (s.horizon.enabled && horizonProfile) q.set(K.horizonProfile, horizonProfile);
   return q.toString();
 }
 
@@ -155,6 +170,10 @@ export function fromQuery(search: string): Record<string, any> {
   if (has(K.dbgDate)) out.dbgDate = q.get(K.dbgDate);
   if (has(K.dbgHour)) out.dbgHour = q.get(K.dbgHour);
   if (has(K.dbgOrient)) out.dbgOrient = q.get(K.dbgOrient);
+  const hz: Record<string, string> = {};
+  if (has(K.horizonOn)) hz.enabled = q.get(K.horizonOn)!;
+  if (has(K.horizonHeight)) hz.panelHeight = q.get(K.horizonHeight)!;
+  if (Object.keys(hz).length) out.horizon = hz;
   return out;
 }
 
@@ -167,6 +186,7 @@ export function mergeState(base: AppState, partial: Record<string, any>): AppSta
     params: { ...base.params, ...(partial.params ?? {}) },
     you: { ...base.you, ...(partial.you ?? {}) },
     sys: { ...base.sys, ...(partial.sys ?? {}) },
+    horizon: { ...base.horizon, ...(partial.horizon ?? {}) },
   }, base);
 }
 
@@ -185,19 +205,25 @@ export function readStored(): string | null {
   try { return localStorage.getItem(STORE_KEY); } catch { return null; }
 }
 
-export function persist(s: AppState): void {
+/** Encoded horizon profile in the query string, if any (validated by the caller). */
+export function profileFromQuery(search: string): string | null {
+  const v = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get(QUERY_KEYS.horizonProfile);
+  return v && /^[A-Za-z0-9_-]+$/.test(v) ? v : null;
+}
+
+export function persist(s: AppState, horizonProfile?: string): void {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch { /* storage blocked */ }
   try {
     const url = new URL(location.href);
-    url.search = toQuery(s);
+    url.search = toQuery(s, horizonProfile);
     history.replaceState(history.state, "", url);
   } catch { /* sandboxed frame: URL cannot change */ }
 }
 
 /** Full shareable link for the current settings. */
-export function shareUrl(s: AppState, href: string = location.href): string {
+export function shareUrl(s: AppState, href: string = location.href, horizonProfile?: string): string {
   const url = new URL(href);
-  url.search = toQuery(s);
+  url.search = toQuery(s, horizonProfile);
   url.hash = "";
   return url.toString();
 }

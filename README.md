@@ -17,6 +17,9 @@ Runs entirely in the browser.
 - Debug view: every calculation step for any hour with formula, substituted numbers and result;
   the full day hour by hour; totals, optimizer, loss and energy steps; CSV export of the whole year;
   a pvlib-python snippet that reproduces the selected hour independently.
+- Terrain shading: the skyline is computed from 90 m elevation data (Open-Meteo, Copernicus GLO-90)
+  out to 30 km. Hills block the sun and part of the sky; a sun-path chart shows which months and
+  hours are hidden; the optimum, totals and loss include it.
 - Settings are saved in the browser (localStorage), so a refresh keeps everything, and mirrored into
   the address bar's query string, so the URL is a shareable link (`Copy share link` button).
   Example: `index.html?lat=59.9139&lon=10.7522&alt=23&tilt=45&az=200&tab=heatmap`.
@@ -41,15 +44,17 @@ Each step mirrors the corresponding pvlib-python function so results can be chec
 
 ```sh
 npm install
-npm test            # 102 unit tests (vitest)
+npm test            # unit + integration tests (vitest)
 npm run typecheck
-npm run fixtures    # regenerate pvlib reference values (needs: pip install pvlib)
+npm run fixtures    # regenerate reference values (needs: pip install pvlib)
 ```
 
 `src/core/__fixtures__/pvlib.json` holds reference values produced by `reference/generate_fixtures.py`
 with pvlib 0.16.1 for Madrid, Oslo, Sydney, Quito and Denver: pure-function cases, hourly samples with
 every intermediate value, monthly/annual totals for 7 orientations × 2 diffuse models, and brute-force
 optima. The library's solar position is also checked against the NREL SPA report's reference case.
+`shading.json` covers the terrain model (numpy reference with Monte Carlo checks), and
+`integration.json` runs the full calculation for Buenos Aires, Alicante, Fresno, Alice Springs and Tokyo.
 
 ## Build & run
 

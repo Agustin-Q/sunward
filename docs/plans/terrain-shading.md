@@ -1,6 +1,12 @@
 # Plan: terrain (horizon) shading
 
-Status: **planned, not started.**
+Status: **implemented (2026-10-10).** See CALCULATIONS.md §10 for the final formulas.
+
+Not done from this plan:
+- map rays coloured by horizon height
+- the real-data comparison against a PVGIS horizon (test 7). The workspace couldn't reach PVGIS or
+  Open-Meteo, so the browser flow was verified with a faked elevation service. Check against a real
+  mountain site when network access allows.
 
 ## Decisions (user, 2026-10-10)
 

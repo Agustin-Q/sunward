@@ -3,10 +3,13 @@
 ## Data flow
 
 ```
-settings (AppState) ──► worker.ts ──► WeatherSource.year(site, params)    8,760 hours of
+settings (AppState) ──► ensureHorizon(): memory → localStorage cache → Open-Meteo (18 requests)
+   │                       └─ computeHorizon(site, panelHeight, sampler) → 72-value profile
+   ├──────────────────► worker.ts ──► WeatherSource.year(site, params)    8,760 hours of
    │                       │            └─ clearSkyHour(): SPA → air mass  sun position +
    │                       │               → I₀ → Ineichen                 GHI/DNI/DHI/I₀
-   │                       └──► optimize(weather) ─► best orientation + heatmap + trace
+   │                       ├──► buildShading(weather, profile) (when terrain is on)
+   │                       └──► optimize(weather, {shading}) ─► best orientation + heatmap + trace
    ▼
 main.ts ──► simulateYear(weather, yours/optimal) ─► monthly / daily / annual
         ──► compare() ─► deviation + loss      energyKWh() ─► kWh
@@ -31,14 +34,17 @@ main.ts ──► simulateYear(weather, yours/optimal) ─► monthly / daily / 
 | `extraterrestrial.ts` | Spencer I₀ |
 | `solarPosition.ts` | wrapper around `@yogur/solpos` (NREL SPA) |
 | `clearsky.ts` | Ineichen-Perez |
-| `planeOfArray.ts` | angle of incidence, beam, Hay-Davies / isotropic, ground, total |
+| `planeOfArray.ts` | angle of incidence, beam, Hay-Davies / isotropic, ground, total; optional `ShadeFactors` |
+| `horizon.ts` | `HorizonProfile`, interpolation, sun visibility, Dozier sky view factor, `traceShade`, URL encode/decode |
+| `shading.ts` | `buildShading(weather, profile)`: per-hour visibility plus the ground's sky view |
+| `terrain.ts` | ray casting over elevation data with an injected `ElevationSampler`; great-circle, curvature |
 | `weather.ts` | `WeatherSource` interface, `clearSkySource`, registry `WEATHER_SOURCES` (PVGIS / NASA disabled) |
-| `simulate.ts` | `simulateYear()` → `YearResult` (monthly, dailyAvg, annual, components) |
-| `optimize.ts` | grid + refinement, heatmap |
+| `simulate.ts` | `simulateYear(w, o, params, t?, shading?)` → `YearResult` (monthly, dailyAvg, annual, components) |
+| `optimize.ts` | grid + refinement, heatmap; `opts.shading` |
 | `compare.ts` | deviation, monthly/annual loss |
 | `energy.ts` | kWh from kWp and PR |
 | `textbook.ts` | approximate sun position for learning (debug only) |
-| `debug.ts` | `traceHour()`, `hourRows()`, `rowsToCsv()`, `pvlibSnippet()` |
+| `debug.ts` | `traceHour(…, horizon?)`, `hourRows(…, shading?)`, `rowsToCsv()`, `pvlibSnippet()` |
 
 ### Tracing contract
 
@@ -62,6 +68,9 @@ example `clearsky.ghi`, `poa.global`). Tests assert that traced values equal the
 | Module | Responsibility |
 |---|---|
 | `appState.ts` | `AppState`, `DEFAULTS`, `sanitize()`, `toQuery()` / `fromQuery()`, `mergeState()`, `resolveInitialState()`, `persist()`, `shareUrl()` |
+| `elevation.ts` | `openMeteoSampler()`: batches of 100, 3 at a time, retries on 429/5xx, progress callback |
+| `horizonCache.ts` | localStorage cache of computed profiles keyed by `lat,lon` (4 decimals) and panel height |
+| `sunPathData.ts` / `sunPath.ts` | sun paths for the 21st of each month (SPA), split by skyline; canvas chart |
 | `map.ts` | Leaflet map: Esri World Imagery + labels, draggable pin, rotatable arrow overlay. Also the altitude lookup (Open-Meteo) and geocoding (Nominatim) |
 | `compass.ts` | SVG compass dial (drag / arrow keys) and the tilt side view |
 | `charts.ts` | Chart.js monthly bars (optimal vs yours) and the loss chart; colours from CSS tokens; re-themes on change |
@@ -85,7 +94,10 @@ example `clearsky.ghi`, `poa.global`). Tests assert that traced values equal the
 - Load order: `DEFAULTS` ← localStorage key `sunward.v1` (sanitized) ← query string (sanitized).
 - Every change calls `save()` → `persist()`. That writes localStorage and
   `history.replaceState(…?query)`.
-- Query keys (never rename): `lat lon alt tilt az kwp pr tl alb tm src unit tab dd dh do`.
+- Query keys (never rename): `lat lon alt tilt az kwp pr tl alb tm src unit tab dd dh do hm hh hp`.
+  - `hm` / `hh`: terrain shading on/off and panel height.
+  - `hp`: the terrain profile itself (72 bytes, base64url, 0.5° steps). It is only present when
+    shading is on, so a shared link needs no elevation download.
 - A link that includes `lat`/`lon` clears `siteIsExample`.
 - Invalid values are clamped or ignored (tested).
 
@@ -97,6 +109,7 @@ example `clearsky.ghi`, `poa.global`). Tests assert that traced values equal the
 | Satellite map | yes (Esri tiles) | blocked (no external images) → compass fallback |
 | GPS | yes; needs HTTPS or localhost in most browsers | blocked |
 | Address search / altitude | yes (Nominatim, Open-Meteo) | blocked (no fetch) |
+| Terrain shading | yes (Open-Meteo elevation, cached) | only with a profile already cached in that browser; otherwise an explanatory message |
 | Query-string settings | yes | the query never reaches the page; the share button is hidden |
 | localStorage | yes | yes (per viewer) |
 | CSV download | blob link | `claude.use("downloads")`, declared as capability `{downloads: true}` |
@@ -116,3 +129,21 @@ The Artifact is published from `dist/artifact.html` with `capabilities: {downloa
   - `typescript`
   - `@types/leaflet`
 - Reference only: Python `pvlib` (fixtures).
+
+## Browser testing without network
+
+The build sandbox blocks outside hosts, so the elevation service is faked with Playwright
+(`pip install playwright && python -m playwright install chromium`):
+
+```python
+await context.route("https://api.open-meteo.com/**", handler)   # parse latitude/longitude lists,
+# reply {"elevation": [...]} with synthetic terrain (e.g. a ridge 4 km to the SE) and
+# "access-control-allow-origin: *"
+```
+
+Check that:
+- turning terrain on makes 18 requests and shows "Skyline ready…"
+- the optimum and the terrain line change
+- the URL gets `hm=1&hp=…`
+- a reload makes no new requests (cache)
+- the URL opened in a fresh context with the route aborted still shows the profile (from `hp`)

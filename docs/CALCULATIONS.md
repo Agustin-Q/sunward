@@ -28,6 +28,11 @@ outputs are:
 **θz′ is used for all irradiance**, as in pvlib's ModelChain.
 → `src/core/solarPosition.ts` ≙ `pvlib.location.Location.get_solarposition`
 
+Refraction near the horizon: `@yogur/solpos` applies no refraction when the geometric sun is
+below the horizon. pvlib and the NREL SPA reference apply it down to −0.83°. So pvlib counts about
+30 more daylight hours a year at sunrise and sunset (sun at −0.8…0°), each with only a few W/m².
+The effect on energy is negligible (<0.01%) and tests account for it.
+
 Library check: the NREL report's reference case (2003-10-17 12:30:30 −7 h, Golden CO) gives
 zenith 50.11162° and azimuth 194.34024°. This is tested.
 
@@ -143,12 +148,79 @@ Reference optima (pvlib brute force, TL 3, albedo 0.2, Hay-Davies):
 
 → `src/core/compare.ts`, `src/core/energy.ts`
 
+## 10. Terrain (horizon) shading
+
+This is optional; it's on when the user enables **Terrain shading**. Without it, every value above
+is pvlib's exactly. → `src/core/horizon.ts`, `shading.ts`, `terrain.ts`
+
+**Horizon profile:** the skyline elevation `e_h(φ)` every 5° of azimuth (72 values, north clockwise).
+It is linearly interpolated, wrapping 355° → 0°.
+
+**From elevation data (ray casting):**
+- 72 rays × 24 log-spaced distances (150 m → 30 km), plus the site, give 1,729 points. These are
+  sampled from Copernicus GLO-90 (90 m) through the Open-Meteo elevation API, in 18 requests.
+- `drop(d) = d² · (1 − k) / (2R)`, with k = 0.13 and R = 6,371,008.8 m (61.4 m at 30 km)
+- `e(φ) = max_d atan2(z(d) − drop(d) − (z₀ + h_panel), d)`, clamped at 0 for the model
+- z₀ is the ground altitude at the site from the same data; h_panel is the user's panel height
+
+**Per hour:** `v = 1` if the apparent elevation `α = 90 − θz′ > e_h(γs)`, otherwise 0.
+
+**Sky view factor with horizon (Dozier & Frew 1990):**
+
+```
+e(φ) = max(e_h(φ), atan(−tan β · cos(φ − γ)))      (the panel's own plane limits its view)
+H(φ) = 90° − e(φ)
+Fsky,h = (1/2π) ∫ [cos β · sin²H + sin β · cos(φ − γ) · (H − sin H cos H)] dφ    (1° steps)
+```
+
+With a flat horizon this equals `(1 + cos β)/2` exactly. A horizontal surface with a uniform
+horizon h gives `cos²h`. Both are tested.
+
+**Shaded plane of array:**
+
+| Component | With terrain |
+|---|---|
+| Beam | `Eb = v · max(DNI · cos θ, 0)` |
+| Circumsolar | `Ed,cs = v · DHI · Ai · Rb` |
+| Isotropic | `Ed,iso = DHI · (1 − Ai) · Fsky,h(β, γ)` (isotropic model: `DHI · Fsky,h`) |
+| Ground | `GHI_h = v · DNI · cos θz′ + DHI · Fsky,h(0)`; `Eg = GHI_h · ρ · (1 − cos β)/2` |
+
+Light reflected by the mountains themselves is ignored.
+
+**Terrain loss** = `(H_open − H_shaded) / H_open · 100` for the user's orientation. The optimizer
+and heatmap use the shaded totals.
+
+**Reference:** pvlib 0.16 has no horizon-shading function. The tests compare against an
+independent numpy implementation on pvlib's clear-sky series
+(`reference/generate_shading_fixtures.py`):
+- sky view factors are also checked by Monte Carlo integration of the sky dome (agreement 1e-4)
+- yearly totals for six synthetic skylines (flat, 10° valley, east ridge, south ridge, 35° east
+  wall, alpine) agree within 0.1–0.2%
+
+A 35° eastern wall turns Madrid's optimum from 178° to about 201°.
+
+## 11. Integration tests (five real places)
+
+`src/core/__tests__/integration.test.ts` runs the app's whole pipeline against an independent pvlib
+calculation (`reference/generate_integration_fixtures.py`):
+- clear-sky year → optimum → monthly/daily/annual totals for the optimum and a "current" panel
+- loss % → kWh (5 kWp, PR 0.8)
+- the same with a synthetic terrain ridge
+
+| Site | Optimum | kWh/m²/yr | Current panel | Loss | Terrain loss |
+|---|---|---|---|---|---|
+| Buenos Aires, Argentina | 33° / 0° (N) | 2,512 | 20° / 330° | 4.1% | 4.8% |
+| Alicante, Spain | 36° / 180° | 2,468 | 15° / 200° | 6.4% | 4.4% |
+| Fresno, California | 34° / 180° | 2,490 | 25° / 225° | 6.6% | 3.1% |
+| Alice Springs, Australia | 23° / 0° (N) | 2,646 | 10° / 45° | 3.9% | 0.6% |
+| Tokyo, Japan | 33° / 182° | 2,500 | 30° / 160° | 1.3% | 5.7% |
+
 ## Known modelling limits
 
 - **Clear sky ignores clouds**, so absolute totals run high (often 20–35% in sunny climates). The
   optimal angles and the loss % are much more reliable.
-- There is no shading from horizon, buildings or trees, no incidence-angle (reflection) losses and
-  no temperature model. PR lumps those together.
+- Terrain shading covers hills and mountains (90 m data). There is no shading from buildings or
+  trees, no incidence-angle (reflection) losses and no temperature model. PR lumps those together.
 - The model assumes a fixed mount; there is no tracking.
 
 ## Small differences from the first explanation given to the user

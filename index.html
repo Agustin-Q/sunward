@@ -77,6 +77,14 @@
         </div>
       </section>
 
+      <section class="panel" aria-labelledby="terrain-h">
+        <h2 id="terrain-h" class="eyebrow">Terrain shading</h2>
+        <label class="switch"><input id="hz-on" type="checkbox"> Account for hills and mountains</label>
+        <label>Panel height above ground (m)<input id="hz-height" type="number" step="0.5" min="0" max="300" inputmode="decimal"></label>
+        <p id="hz-msg" class="msg" role="status"></p>
+        <p class="hint">Uses 90 m elevation data out to 30 km. Trees and buildings are not included.</p>
+      </section>
+
       <details class="panel model" id="model-panel">
         <summary class="eyebrow">Model settings</summary>
         <label>Weather data
@@ -122,6 +130,7 @@
             <span class="stat-sub" id="s-kwh-sub"></span>
           </div>
         </div>
+        <p class="terrain-line" id="terrain-line" hidden></p>
         <p class="caveat" id="caveat"></p>
 
         <div class="card">
@@ -139,6 +148,12 @@
         <div class="card">
           <div class="card-head"><h3>Loss vs optimal by month</h3><span class="hint">Below zero means your panel beats the yearly optimum that month.</span></div>
           <div class="chart-box short"><canvas id="chart-loss" aria-label="Monthly loss percent"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Sun path and skyline</h3><span class="hint">The sun on the 21st of each month. Dashed where hills hide it. Dots mark each hour of solar time.</span></div>
+          <div class="heat-scroll"><canvas id="sunpath" aria-label="Sun paths through the year with the terrain skyline"></canvas></div>
+          <div id="sunpath-tip" class="tip" hidden></div>
         </div>
 
         <div class="card">
@@ -180,6 +195,11 @@
             <button id="btn-csv" class="btn ghost small">Download full year (CSV)</button>
           </div>
           <div class="table-scroll"><table id="tbl-day" class="data dense"></table></div>
+        </div>
+        <div class="card" id="dbg-horizon-card" hidden>
+          <div class="card-head"><h3>Terrain horizon</h3></div>
+          <div id="dbg-terrain" class="steps"></div>
+          <div class="table-scroll"><table id="tbl-horizon" class="data dense"></table></div>
         </div>
         <div class="card">
           <div class="card-head"><h3>Totals, optimizer, loss and electricity</h3></div>

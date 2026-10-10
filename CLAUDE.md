@@ -23,7 +23,7 @@ npm run check         # typecheck + tests (run before finishing any change)
 npm run dev           # vite dev server (full features: map, GPS on localhost, search)
 npm run build         # dist/index.html: single self-contained file
 npm run artifact      # build + dist/artifact.html (claude.ai Artifact variant)
-npm run fixtures      # regenerate pvlib reference values (pip install pvlib; ~90 s)
+npm run fixtures      # regenerate all pvlib/numpy reference values (pip install pvlib; ~2 min)
 ```
 
 ## Ground rules
@@ -31,8 +31,10 @@ npm run fixtures      # regenerate pvlib reference values (pip install pvlib; ~9
 1. **All calculations live in `src/core/`. Keep it pure:** no DOM, no fetch, no globals. UI code
    only calls into it.
 2. **Every calculation must be unit-tested.** New formulas get tests against pvlib-python values
-   added to `reference/generate_fixtures.py`, then `npm run fixtures`. Property tests alone are not
-   enough when a pvlib equivalent exists. Do not hand-edit `src/core/__fixtures__/pvlib.json`.
+   added to the generators in `reference/` (`generate_fixtures.py`, `generate_shading_fixtures.py`,
+   `generate_integration_fixtures.py`), then `npm run fixtures`. Pipeline changes must keep the
+   five-site integration tests (`src/core/__tests__/integration.test.ts`) passing. Property tests alone are not
+   enough when a pvlib equivalent exists. Do not hand-edit anything in `src/core/__fixtures__/`.
 3. **Use libraries for the hard parts.** Solar position comes from `@yogur/solpos` (NREL SPA). Don't
    replace it with an approximation. `src/core/textbook.ts` is a learning aid shown in the debug
    view only and must never feed results.
@@ -72,11 +74,13 @@ npm run fixtures      # regenerate pvlib reference values (pip install pvlib; ~9
 
 ```
 src/core/            pure model: types, trace, math, atmosphere, extraterrestrial, solarPosition,
-                     clearsky, planeOfArray, weather (sources), simulate, optimize, compare,
+                     clearsky, planeOfArray, horizon, shading, terrain, weather (sources),
+                     simulate, optimize, compare,
                      energy, textbook, debug (hour trace, CSV, pvlib snippet), index
 src/core/__tests__/  unit tests (fixtures from pvlib, helpers.ts has close() + cached years)
 src/core/__fixtures__/pvlib.json   generated reference values. Do not edit by hand.
-src/ui/              appState (settings/URL/storage), map (Leaflet + Esri), compass, charts
+src/ui/              appState (settings/URL/storage), elevation (Open-Meteo sampler), horizonCache,
+                     sunPath (+Data), map (Leaflet + Esri), compass, charts
                      (Chart.js), heatmap (canvas), debugView, helpers, styles.css
 src/main.ts          wiring: state, worker calls, rendering, events
 src/worker.ts        builds the weather year + runs the optimizer off the main thread
@@ -92,5 +96,9 @@ After a change:
 2. For UI work, run `npm run build` and open `dist/index.html`.
 3. Check both light and dark themes, at phone width (about 400 px) and desktop width.
 
-Madrid with defaults (TL 3, albedo 0.2, Hay-Davies) must give an optimum of **38° tilt, ~178°
-azimuth, ~2,500 kWh/m²/yr**. That's a quick sanity check.
+Madrid with defaults (TL 3, albedo 0.2, Hay-Davies, terrain off) must give an optimum of
+**38° tilt, ~178° azimuth, ~2,500 kWh/m²/yr**. That's a quick sanity check.
+
+Terrain shading is off unless enabled. With it off, every result must stay identical to pvlib.
+Elevation data comes from Open-Meteo, which the build sandbox can't reach. Fake it in browser tests
+by routing `https://api.open-meteo.com/**` (see the Playwright approach in docs/ARCHITECTURE.md).

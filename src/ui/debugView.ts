@@ -42,7 +42,7 @@ export function renderDayTable(table: HTMLTableElement, rows: HourRow[], highlig
       const cells = HOUR_ROW_COLUMNS.map((c) => {
         if (c.key === "epochMs") return `<td>${new Date(r.epochMs).toISOString().slice(11, 16)}</td>`;
         const v = r[c.key];
-        return `<td>${c.key === "cosAoi" ? v.toFixed(3) : v.toFixed(1)}</td>`;
+        return `<td>${c.key === "cosAoi" ? v.toFixed(3) : c.key === "sunVisible" ? String(v) : v.toFixed(1)}</td>`;
       }).join("");
       const style = i === highlightIndex ? ' style="background:var(--surface-2)"' : "";
       return `<tr class="${r.ghi <= 0 ? "night" : ""}"${style}>${cells}</tr>`;

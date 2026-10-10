@@ -1,5 +1,7 @@
 import { dayOfYearUTC } from "./math";
 import { planeOfArray, type PoaComponents } from "./planeOfArray";
+import { skyViewFactor, traceShade, type HorizonProfile, type ShadeFactors } from "./horizon";
+import type { Shading } from "./shading";
 import { textbookSun } from "./textbook";
 import { createTracer, fmt as f, type TraceStep, type Tracer } from "./trace";
 import type { ModelParams, Orientation, Site } from "./types";
@@ -21,6 +23,7 @@ export async function traceHour(
   params: ModelParams,
   o: Orientation,
   epochMs: number,
+  horizon?: HorizonProfile | null,
 ): Promise<HourTrace> {
   const t: Tracer = createTracer();
   t.group("Inputs");
@@ -36,8 +39,13 @@ export async function traceHour(
 
   const inputs = await source.hour(site, params, epochMs, t);
 
+  let shade: ShadeFactors | undefined;
+  if (horizon) {
+    t.group("Terrain shading");
+    shade = traceShade(horizon, inputs.sun.apparentZenith, inputs.sun.azimuth, o.tilt, o.azimuth, t);
+  }
   t.group(params.transposition === "haydavies" ? "Irradiance on panel (Hay-Davies)" : "Irradiance on panel (isotropic)");
-  const poa = planeOfArray(o, inputs.sun.apparentZenith, inputs.sun.azimuth, inputs.irr, inputs.dniExtra, params.albedo, params.transposition, t);
+  const poa = planeOfArray(o, inputs.sun.apparentZenith, inputs.sun.azimuth, inputs.irr, inputs.dniExtra, params.albedo, params.transposition, t, shade);
   t.add({ key: "poa.hourEnergy", label: "Energy this hour", symbol: "POA·1h", formula: "POA × 1 h", substituted: `${f(poa.global, 2)} W/m² × 1 h`, value: poa.global, unit: "Wh/m²" });
 
   t.group("Textbook check (approximate, not used in results)");
@@ -56,6 +64,8 @@ export interface HourRow {
   dni: number;
   dhi: number;
   cosAoi: number;
+  /** 1 when the sun is above the skyline (always 1 without terrain shading) */
+  sunVisible: number;
   direct: number;
   circumsolar: number;
   isotropic: number;
@@ -72,6 +82,7 @@ export const HOUR_ROW_COLUMNS: { key: keyof HourRow; label: string; unit: string
   { key: "dni", label: "DNI", unit: "W/m²" },
   { key: "dhi", label: "DHI", unit: "W/m²" },
   { key: "cosAoi", label: "cos θ", unit: "" },
+  { key: "sunVisible", label: "v", unit: "" },
   { key: "direct", label: "Eb", unit: "W/m²" },
   { key: "circumsolar", label: "Ed,cs", unit: "W/m²" },
   { key: "isotropic", label: "Ed,iso", unit: "W/m²" },
@@ -80,11 +91,13 @@ export const HOUR_ROW_COLUMNS: { key: keyof HourRow; label: string; unit: string
 ];
 
 /** Per-hour rows for a range of hour indices of the weather year. */
-export function hourRows(w: WeatherYear, o: Orientation, params: ModelParams, from = 0, to = w.epochMs.length): HourRow[] {
+export function hourRows(w: WeatherYear, o: Orientation, params: ModelParams, from = 0, to = w.epochMs.length, shading?: Shading): HourRow[] {
   const rows: HourRow[] = [];
+  const skyView = shading ? skyViewFactor(shading.profile, o.tilt, o.azimuth) : NaN;
   for (let i = from; i < to; i++) {
     const t = createTracer();
-    const r = planeOfArray(o, w.apparentZenith[i], w.azimuth[i], { ghi: w.ghi[i], dni: w.dni[i], dhi: w.dhi[i] }, w.dniExtra[i], params.albedo, params.transposition, t);
+    const shade = shading ? { sunVisible: shading.visible[i] === 1, skyView, skyViewHorizontal: shading.skyViewHorizontal } : undefined;
+    const r = planeOfArray(o, w.apparentZenith[i], w.azimuth[i], { ghi: w.ghi[i], dni: w.dni[i], dhi: w.dhi[i] }, w.dniExtra[i], params.albedo, params.transposition, t, shade);
     rows.push({
       epochMs: w.epochMs[i],
       apparentZenith: w.apparentZenith[i],
@@ -94,6 +107,7 @@ export function hourRows(w: WeatherYear, o: Orientation, params: ModelParams, fr
       dni: w.dni[i],
       dhi: w.dhi[i],
       cosAoi: t.steps.find((s) => s.key === "poa.cosAoi")!.value,
+      sunVisible: shading ? shading.visible[i] : 1,
       direct: r.direct,
       circumsolar: r.circumsolar,
       isotropic: r.isotropic,

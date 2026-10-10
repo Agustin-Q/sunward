@@ -13,6 +13,7 @@
   --good: #1a7f4b;
   --bad: #b3261e;
   --focus: #2a78d6;
+  --terrain: #a89f8c;
   --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
   --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -22,13 +23,13 @@
   :root:not([data-theme="light"]) {
     --bg: #0e1217; --surface: #161b22; --surface-2: #1d232c; --ink: #edf0f4; --muted: #9ba6b3;
     --line: #2b333e; --accent: #ff7d33; --accent-ink: #1a0d04; --you: #3987e5; --opt: #d95926;
-    --good: #45b97c; --bad: #f2786d; --focus: #6da7ec; color-scheme: dark;
+    --good: #45b97c; --bad: #f2786d; --focus: #6da7ec; --terrain: #5b5446; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0e1217; --surface: #161b22; --surface-2: #1d232c; --ink: #edf0f4; --muted: #9ba6b3;
   --line: #2b333e; --accent: #ff7d33; --accent-ink: #1a0d04; --you: #3987e5; --opt: #d95926;
-  --good: #45b97c; --bad: #f2786d; --focus: #6da7ec; color-scheme: dark;
+  --good: #45b97c; --bad: #f2786d; --focus: #6da7ec; --terrain: #5b5446; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -119,6 +120,10 @@ output { font: 500 .9rem var(--font-mono); color: var(--ink); }
 .stat-sub { white-space: pre-line; font: 400 .8rem/1.35 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .loss-low { color: var(--good); }
 .loss-high { color: var(--bad); }
+.switch { flex-direction: row; align-items: center; gap: 8px; font-size: .9rem; color: var(--ink); }
+.switch input { width: 18px; height: 18px; accent-color: var(--accent); }
+.terrain-line { margin: 0; font-size: .9rem; padding: 8px 12px; border-radius: 8px; background: var(--surface-2); border-left: 3px solid var(--terrain); }
+#sunpath { display: block; width: 100%; min-width: 560px; height: auto; }
 .caveat { margin: 0; font-size: .84rem; color: var(--muted); max-width: 75ch; }
 
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; flex-wrap: wrap; }

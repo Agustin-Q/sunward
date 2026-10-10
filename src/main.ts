@@ -1,8 +1,8 @@
 import "./ui/styles.css";
 import {
-  WEATHER_SOURCES, compare, createTracer, energyKWh, getSource, hourRows, optimize,
-  pvlibSnippet, rowsToCsv, simulateYear, textbookSun, traceHour,
-  type ModelParams, type OptimizeResult, type Orientation, type Site, type TraceStep,
+  WEATHER_SOURCES, buildShading, compare, computeHorizon, createTracer, decodeProfile, encodeProfile, energyKWh, getSource,
+  horizonMax, hourRows, optimize, pvlibSnippet, rowsToCsv, simulateYear, skyViewFactor, textbookSun, traceHour,
+  type HorizonProfile, type ModelParams, type OptimizeResult, type Orientation, type Shading, type Site, type TraceStep,
   type WeatherYear, type YearResult,
 } from "./core";
 import { createCompass, renderTiltView } from "./ui/compass";
@@ -11,7 +11,10 @@ import { createHeatmap } from "./ui/heatmap";
 import { renderDayTable, renderSteps } from "./ui/debugView";
 import { compassPoint, dateToHourIndex, fmtNum, fmtSigned, readNum } from "./ui/helpers";
 import type { SiteMap } from "./ui/map";
-import { DEFAULTS, persist, readStored, resolveInitialState, shareUrl, type AppState } from "./ui/appState";
+import { DEFAULTS, persist, profileFromQuery, readStored, resolveInitialState, shareUrl, type AppState } from "./ui/appState";
+import { horizonKey, readHorizon, writeHorizon, type CachedHorizon } from "./ui/horizonCache";
+import { openMeteoSampler } from "./ui/elevation";
+import { createSunPathChart } from "./ui/sunPath";
 import ComputeWorker from "./worker?worker&inline";
 
 // ---------- state ----------
@@ -19,10 +22,31 @@ import ComputeWorker from "./worker?worker&inline";
 // Every change goes through save(), which writes localStorage and mirrors the
 // settings into the URL so the address bar is always a shareable link.
 const state: AppState = resolveInitialState(readStored(), location.search);
-const save = () => persist(state);
 const inArtifact = typeof (window as unknown as { claude?: { use?: unknown } }).claude?.use === "function";
 
-interface Computed { weather: WeatherYear; opt: OptimizeResult; optSteps: TraceStep[]; optYear: YearResult; youYear: YearResult }
+// Terrain horizon for the current site + panel height (data, cached per site; not a setting).
+let horizon: CachedHorizon | null = null;
+let horizonLoadedKey = "";
+const hzKey = () => horizonKey(state.site.lat, state.site.lon, state.horizon.panelHeight);
+const activeProfile = (): HorizonProfile | null => (state.horizon.enabled && horizon && horizonLoadedKey === hzKey() ? horizon.profile : null);
+const save = () => {
+  const p = activeProfile();
+  persist(state, p ? encodeProfile(p) : undefined);
+};
+// A shared link may carry the profile (hp=…): cache it for this site so no download is needed.
+{
+  const code = profileFromQuery(location.search);
+  const p = code ? decodeProfile(code) : null;
+  if (p && state.horizon.enabled && !readHorizon(hzKey())) writeHorizon(hzKey(), { profile: p, source: "link", computedAt: Date.now() });
+}
+
+interface Computed {
+  weather: WeatherYear; opt: OptimizeResult; optSteps: TraceStep[]; optYear: YearResult; youYear: YearResult;
+  /** Terrain shading used for this result (absent when off) */
+  shading?: Shading;
+  /** Your orientation without terrain (to report the terrain loss) */
+  youOpen?: YearResult;
+}
 let computed: Computed | null = null;
 
 // ---------- dom ----------
@@ -42,6 +66,8 @@ const setMsg = (el: HTMLElement, text: string, error = false) => { el.textConten
 const compass = createCompass($<SVGSVGElement & HTMLElement>("compass") as unknown as SVGSVGElement, (az) => setYou({ azimuth: az }));
 const charts = createCharts($<HTMLCanvasElement>("chart-monthly"), $<HTMLCanvasElement>("chart-loss"));
 const heat = createHeatmap($<HTMLCanvasElement>("heatmap"), $("heat-tip"), $("heat-legend"), (o) => setYou(o));
+const sunPathChart = createSunPathChart($<HTMLCanvasElement>("sunpath"), $("sunpath-tip"));
+const hzMsg = $("hz-msg");
 let siteMap: SiteMap | null = null;
 let mapAvailable = true;
 
@@ -111,6 +137,56 @@ function writeInputs() {
   inputs.dbgDate.value = state.dbgDate;
   inputs.dbgHour.value = String(state.dbgHour);
   inputs.dbgOrient.value = state.dbgOrient;
+  $<HTMLInputElement>("hz-on").checked = state.horizon.enabled;
+  $<HTMLInputElement>("hz-height").value = String(state.horizon.panelHeight);
+}
+
+// ---------- terrain horizon ----------
+let hzAbort: AbortController | null = null;
+function describeHorizon(h: CachedHorizon) {
+  const m = horizonMax(h.profile);
+  const pt = h.points?.[Math.round(m.azimuth / h.profile.stepDeg)];
+  const where = pt ? `, ${(pt.distance / 1000).toFixed(1)} km away` : "";
+  setMsg(hzMsg, m.elevation <= 0.05 ? "Skyline ready: no hills above the horizon here." : `Skyline ready. Highest: ${m.elevation.toFixed(1)}° toward ${m.azimuth}° ${compassPoint(m.azimuth)}${where}.${h.source === "link" ? " (from the shared link)" : ""}`);
+}
+
+/** Get the horizon profile for the current site + height: memory → cache → download. */
+async function ensureHorizon(): Promise<HorizonProfile | null> {
+  if (!state.horizon.enabled) {
+    hzAbort?.abort();
+    setMsg(hzMsg, "");
+    return null;
+  }
+  const key = hzKey();
+  if (horizon && horizonLoadedKey === key) return horizon.profile;
+  const cached = readHorizon(key);
+  if (cached) {
+    horizon = cached;
+    horizonLoadedKey = key;
+    describeHorizon(cached);
+    return cached.profile;
+  }
+  if (inArtifact) {
+    setMsg(hzMsg, "Elevation data can't be downloaded inside Claude. Open the standalone file to use terrain shading. Results below ignore terrain.", true);
+    return null;
+  }
+  hzAbort?.abort();
+  const ctrl = (hzAbort = new AbortController());
+  setMsg(hzMsg, "Downloading elevation data…");
+  try {
+    const sampler = openMeteoSampler({ signal: ctrl.signal, onProgress: (d, n) => setMsg(hzMsg, `Downloading elevation data… ${d} of ${n}`) });
+    const th = await computeHorizon({ lat: state.site.lat, lon: state.site.lon }, state.horizon.panelHeight, sampler);
+    if (key !== hzKey() || ctrl.signal.aborted) return null; // site or height changed meanwhile
+    horizon = { profile: th.profile, points: th.points, groundAltitude: th.groundAltitude, observerAltitude: th.observerAltitude, source: "terrain", computedAt: Date.now() };
+    horizonLoadedKey = key;
+    writeHorizon(key, horizon);
+    describeHorizon(horizon);
+    return horizon.profile;
+  } catch (e) {
+    if ((e as Error).name === "AbortError" || ctrl.signal.aborted) return null;
+    setMsg(hzMsg, "Couldn't download elevation data (no internet, or the service is busy). Results below ignore terrain; change a setting to try again.", true);
+    return null;
+  }
 }
 
 // ---------- compute ----------
@@ -123,15 +199,15 @@ function scheduleRecompute() {
   timer = window.setTimeout(recompute, 350);
 }
 
-async function computeInline(site: Site, params: ModelParams, sourceId: string) {
+async function computeInline(site: Site, params: ModelParams, sourceId: string, profile: HorizonProfile | null) {
   await new Promise((r) => setTimeout(r, 30)); // let the busy notice paint
   const weather = await getSource(sourceId).year(site, params);
   const t = createTracer();
-  const opt = optimize(weather, params, {}, t);
+  const opt = optimize(weather, params, { shading: profile ? buildShading(weather, profile) : undefined }, t);
   return { weather, opt, optSteps: t.steps };
 }
 
-function computeInWorker(site: Site, params: ModelParams, sourceId: string): Promise<{ weather: WeatherYear; opt: OptimizeResult; optSteps: TraceStep[] }> {
+function computeInWorker(site: Site, params: ModelParams, sourceId: string, horizon: HorizonProfile | null): Promise<{ weather: WeatherYear; opt: OptimizeResult; optSteps: TraceStep[] }> {
   return new Promise((resolve, reject) => {
     const id = ++reqId;
     const onMsg = (e: MessageEvent) => {
@@ -142,7 +218,7 @@ function computeInWorker(site: Site, params: ModelParams, sourceId: string): Pro
     };
     worker!.addEventListener("message", onMsg);
     worker!.addEventListener("error", (err) => reject(err), { once: true });
-    worker!.postMessage({ id, site, params, sourceId });
+    worker!.postMessage({ id, site, params, sourceId, horizon });
   });
 }
 
@@ -152,17 +228,21 @@ async function recompute() {
   const site = { ...state.site }, params = { ...state.params }, sourceId = state.sourceId;
   $("busy").hidden = false;
   try {
+    const profile = await ensureHorizon();
+    if (seq !== computeSeq) return;
     let r;
     try {
-      r = worker ? await computeInWorker(site, params, sourceId) : await computeInline(site, params, sourceId);
+      r = worker ? await computeInWorker(site, params, sourceId, profile) : await computeInline(site, params, sourceId, profile);
     } catch (e) {
       if (!worker) throw e;
       worker = null; // worker blocked or failed: fall back to the main thread
-      r = await computeInline(site, params, sourceId);
+      r = await computeInline(site, params, sourceId, profile);
     }
     if (seq !== computeSeq) return;
-    const optYear = simulateYear(r.weather, r.opt.best, params);
-    computed = { ...r, optYear, youYear: optYear };
+    const shading = profile ? buildShading(r.weather, profile) : undefined;
+    const optYear = simulateYear(r.weather, r.opt.best, params, undefined, shading);
+    computed = { ...r, optYear, youYear: optYear, shading };
+    save(); // URL now carries the profile when shading is on
     refreshDerived();
   } catch (e) {
     setMsg(locMsg, `Calculation failed: ${(e as Error).message}`, true);
@@ -184,8 +264,9 @@ function refreshDerived() {
   siteMap?.setArrows(state.you.azimuth, opt ? opt.azimuth : null);
   if (!computed) return;
 
-  computed.youYear = simulateYear(computed.weather, state.you, state.params);
-  const { optYear, youYear } = computed;
+  computed.youYear = simulateYear(computed.weather, state.you, state.params, undefined, computed.shading);
+  computed.youOpen = computed.shading ? simulateYear(computed.weather, state.you, state.params) : undefined;
+  const { optYear, youYear, youOpen } = computed;
   const cmp = compare(youYear, optYear);
   const eYou = energyKWh(youYear.annual, state.sys), eOpt = energyKWh(optYear.annual, state.sys);
 
@@ -204,6 +285,15 @@ function refreshDerived() {
   $("caveat").textContent = `${state.siteIsExample ? "Example location: Madrid. Set yours on the left. " : ""}${
     src.id === "clearsky" ? "Clear-sky data ignores clouds, so totals run high (often 20–35% in sunny climates, more in cloudy ones). The optimal angles and your loss percentage are much more reliable than the absolute numbers." : src.description}`;
 
+  const tl = $("terrain-line");
+  if (youOpen) {
+    const lost = youOpen.annual - youYear.annual;
+    const pct = youOpen.annual > 0 ? (lost / youOpen.annual) * 100 : 0;
+    tl.textContent = `Terrain hides ${fmtNum(pct, 1)}% of your panel's yearly sunlight (${fmtNum(lost)} kWh/m², about ${fmtNum(energyKWh(lost, state.sys))} kWh). The optimum and all figures below include it.`;
+    tl.hidden = false;
+  } else tl.hidden = true;
+  if (state.tab === "results") sunPathChart.draw(state.site, activeProfile());
+
   // charts
   const u = state.unit;
   const conv = (y: YearResult) => (u === "month" ? y.monthly : u === "day" ? y.dailyAvg : y.monthly.map((m) => m * state.sys.kWp * state.sys.performanceRatio));
@@ -213,9 +303,10 @@ function refreshDerived() {
   // table
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const kwh = (x: number) => x * state.sys.kWp * state.sys.performanceRatio;
-  const rows = months.map((m, k) => `<tr><td>${m}</td><td>${optYear.monthly[k].toFixed(1)}</td><td>${youYear.monthly[k].toFixed(1)}</td><td>${optYear.dailyAvg[k].toFixed(2)}</td><td>${youYear.dailyAvg[k].toFixed(2)}</td><td>${fmtSigned(cmp.lossMonthlyPct[k], 1)}%</td><td>${fmtNum(kwh(youYear.monthly[k]))}</td></tr>`).join("");
-  ($("tbl-monthly") as HTMLTableElement).innerHTML = `<thead><tr><th>Month</th><th>Optimal<br>kWh/m²</th><th>Yours<br>kWh/m²</th><th>Optimal<br>per day</th><th>Yours<br>per day</th><th>Loss</th><th>Yours<br>kWh</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>Year</td><td>${optYear.annual.toFixed(0)}</td><td>${youYear.annual.toFixed(0)}</td><td>${(optYear.annual / 365).toFixed(2)}</td><td>${(youYear.annual / 365).toFixed(2)}</td><td>${fmtSigned(cmp.lossAnnualPct, 1)}%</td><td>${fmtNum(eYou)}</td></tr></tfoot>`;
+  const tCell = (open: number, shaded: number) => (youOpen ? `<td>${fmtNum(open > 0 ? ((open - shaded) / open) * 100 : 0, 1)}%</td>` : "");
+  const rows = months.map((m, k) => `<tr><td>${m}</td><td>${optYear.monthly[k].toFixed(1)}</td><td>${youYear.monthly[k].toFixed(1)}</td><td>${optYear.dailyAvg[k].toFixed(2)}</td><td>${youYear.dailyAvg[k].toFixed(2)}</td><td>${fmtSigned(cmp.lossMonthlyPct[k], 1)}%</td>${youOpen ? tCell(youOpen.monthly[k], youYear.monthly[k]) : ""}<td>${fmtNum(kwh(youYear.monthly[k]))}</td></tr>`).join("");
+  ($("tbl-monthly") as HTMLTableElement).innerHTML = `<thead><tr><th>Month</th><th>Optimal<br>kWh/m²</th><th>Yours<br>kWh/m²</th><th>Optimal<br>per day</th><th>Yours<br>per day</th><th>Loss vs<br>optimal</th>${youOpen ? "<th>Lost to<br>terrain</th>" : ""}<th>Yours<br>kWh</th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr><td>Year</td><td>${optYear.annual.toFixed(0)}</td><td>${youYear.annual.toFixed(0)}</td><td>${(optYear.annual / 365).toFixed(2)}</td><td>${(youYear.annual / 365).toFixed(2)}</td><td>${fmtSigned(cmp.lossAnnualPct, 1)}%</td>${youOpen ? tCell(youOpen.annual, youYear.annual) : ""}<td>${fmtNum(eYou)}</td></tr></tfoot>`;
 
   if (state.tab === "heatmap") heat.draw(computed.opt.heatmap, computed.opt.annual, state.you, computed.opt.best);
   if (state.tab === "debug") scheduleDebug();
@@ -233,17 +324,19 @@ async function renderDebug() {
   const idx = Math.min(8759, Math.max(0, dateToHourIndex(state.dbgDate, state.dbgHour)));
   const epoch = computed.weather.epochMs[idx];
   const src = getSource(state.sourceId);
-  const tr = await traceHour(src, state.site, state.params, o, epoch);
+  const profile = activeProfile();
+  const tr = await traceHour(src, state.site, state.params, o, epoch, profile);
   renderSteps($("dbg-steps"), tr.steps);
   const tb = textbookSun(epoch, state.site);
   $("dbg-solar").textContent = `Local solar time ≈ ${Math.floor(tb.solarTimeH)}:${String(Math.round((tb.solarTimeH % 1) * 60)).padStart(2, "0")}`;
   $("pvlib-code").textContent = pvlibSnippet(state.site, state.params, o, epoch);
   const dayStart = idx - (idx % 24);
-  renderDayTable($("tbl-day") as HTMLTableElement, hourRows(computed.weather, o, state.params, dayStart, dayStart + 24), idx - dayStart);
+  renderDayTable($("tbl-day") as HTMLTableElement, hourRows(computed.weather, o, state.params, dayStart, dayStart + 24, computed.shading), idx - dayStart);
+  renderHorizonDebug();
 
   const t = createTracer();
-  const yy = simulateYear(computed.weather, state.you, state.params, t);
-  const oy = simulateYear(computed.weather, computed.opt.best, state.params, t);
+  const yy = simulateYear(computed.weather, state.you, state.params, t, computed.shading);
+  const oy = simulateYear(computed.weather, computed.opt.best, state.params, t, computed.shading);
   for (const s of computed.optSteps) t.steps.push(s);
   compare(yy, oy, t);
   t.group("Electricity");
@@ -252,10 +345,34 @@ async function renderDebug() {
   renderSteps($("dbg-totals"), t.steps);
 }
 
+function renderHorizonDebug() {
+  const card = $("dbg-horizon-card");
+  const p = activeProfile();
+  card.hidden = !p || !horizon;
+  if (!p || !horizon) return;
+  const t = createTracer();
+  t.group("Summary");
+  if (horizon.groundAltitude !== undefined) {
+    t.add({ key: "terrain.ground", label: "Ground altitude at site (elevation data)", symbol: "z₀", formula: "", substituted: "Copernicus GLO-90 via Open-Meteo", value: horizon.groundAltitude, unit: "m" });
+    t.add({ key: "terrain.observer", label: "Observer altitude", symbol: "z_obs", formula: "z₀ + panel height", substituted: `${horizon.groundAltitude.toFixed(1)} + ${state.horizon.panelHeight}`, value: horizon.observerAltitude ?? horizon.groundAltitude, unit: "m" });
+  }
+  const m = horizonMax(p);
+  t.add({ key: "terrain.highest", label: "Highest skyline point", symbol: "max e_h", formula: "max over azimuths", substituted: `${m.azimuth}° ${compassPoint(m.azimuth)}`, value: m.elevation, unit: "°" });
+  t.add({ key: "terrain.svh", label: "Sky view of the ground with this skyline", symbol: "Fsky,h(0)", formula: "(1/2π)∫ sin²H dφ", substituted: "", value: skyViewFactor(p, 0, 0), unit: "–" });
+  t.add({ key: "terrain.source", label: "Source", symbol: "", formula: "", substituted: horizon.source === "link" ? "shared link (blocking points unknown)" : `rays every ${p.stepDeg}°, 24 distances 150 m–30 km, curvature k = 0.13`, value: p.elevations.length, unit: "directions" });
+  renderSteps($("dbg-terrain"), t.steps);
+  const head = `<thead><tr><th>Azimuth</th><th>Skyline<br>°</th><th>Blocking point<br>km</th><th>Its altitude<br>m</th></tr></thead>`;
+  const body = p.elevations.map((e, i) => {
+    const pt = horizon!.points?.[i];
+    return `<tr><td>${i * p.stepDeg}° ${compassPoint(i * p.stepDeg)}</td><td>${e.toFixed(2)}</td><td>${pt ? (pt.distance / 1000).toFixed(2) : "–"}</td><td>${pt ? pt.terrainAltitude.toFixed(0) : "–"}</td></tr>`;
+  }).join("");
+  ($("tbl-horizon") as HTMLTableElement).innerHTML = head + `<tbody>${body}</tbody>`;
+}
+
 async function downloadCsv() {
   if (!computed) return;
   const btn = $<HTMLButtonElement>("btn-csv");
-  const csv = rowsToCsv(hourRows(computed.weather, state.dbgOrient === "opt" ? computed.opt.best : state.you, state.params));
+  const csv = rowsToCsv(hourRows(computed.weather, state.dbgOrient === "opt" ? computed.opt.best : state.you, state.params, 0, computed.weather.epochMs.length, computed.shading));
   const filename = `sunward-hourly-${state.site.lat.toFixed(3)}_${state.site.lon.toFixed(3)}.csv`;
   const claude = (window as unknown as { claude?: { use(n: string): Promise<{ save(r: { filename: string; data: string }): Promise<unknown> } | null> } }).claude;
   if (claude?.use) {
@@ -279,7 +396,10 @@ function setTab(tab: AppState["tab"]) {
   for (const v of ["results", "heatmap", "debug"]) $(`view-${v}`).hidden = v !== tab;
   if (computed && tab === "heatmap") heat.draw(computed.opt.heatmap, computed.opt.annual, state.you, computed.opt.best);
   if (tab === "debug") scheduleDebug();
-  if (tab === "results") charts.retheme();
+  if (tab === "results") {
+    charts.retheme();
+    sunPathChart.draw(state.site, activeProfile());
+  }
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>(".tabs button")) b.addEventListener("click", () => setTab(b.dataset.tab as AppState["tab"]));
 for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) {
@@ -324,6 +444,17 @@ const onModel = () => {
 };
 for (const el of [inputs.tl, inputs.albedo]) el.addEventListener("change", onModel);
 inputs.transp.addEventListener("change", onModel);
+$<HTMLInputElement>("hz-on").addEventListener("change", (e) => {
+  state.horizon.enabled = (e.target as HTMLInputElement).checked;
+  save();
+  scheduleRecompute();
+});
+$<HTMLInputElement>("hz-height").addEventListener("change", (e) => {
+  state.horizon.panelHeight = readNum((e.target as HTMLInputElement).value, 0, 300, state.horizon.panelHeight);
+  (e.target as HTMLInputElement).value = String(state.horizon.panelHeight);
+  save();
+  if (state.horizon.enabled) scheduleRecompute();
+});
 inputs.source.addEventListener("change", () => {
   const s = getSource(inputs.source.value);
   if (!s.available) { inputs.source.value = state.sourceId; return; }
@@ -349,7 +480,8 @@ if (inArtifact) {
   shareBtn.hidden = true;
 } else {
   shareBtn.addEventListener("click", async () => {
-    const url = shareUrl(state);
+    const p = activeProfile();
+    const url = shareUrl(state, location.href, p ? encodeProfile(p) : undefined);
     try {
       await navigator.clipboard.writeText(url);
       shareBtn.textContent = "Link copied";
@@ -405,7 +537,11 @@ $("search-form").addEventListener("submit", async (e) => {
 });
 
 // re-theme charts when the colour scheme changes
-const retheme = () => { charts.retheme(); if (computed && state.tab === "heatmap") heat.redraw(); };
+const retheme = () => {
+  charts.retheme();
+  if (computed && state.tab === "heatmap") heat.redraw();
+  if (state.tab === "results") sunPathChart.redraw();
+};
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
 new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 

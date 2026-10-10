@@ -4,7 +4,7 @@
 
 - [x] Calculation core: SPA, Spencer, Kasten-Young, Ineichen, AOI, Hay-Davies and isotropic, ground
       reflection, annual simulation, optimizer, loss, energy
-- [x] Unit tests against pvlib for 5 sites, plus the NREL SPA reference case (102 tests in total)
+- [x] Unit tests against pvlib for 5 sites, plus the NREL SPA reference case
 - [x] Location from GPS, manual entry, address search or pin drag; altitude auto-lookup
 - [x] Satellite map with optimal and yours arrows; compass dial fallback; tilt side view
 - [x] Monthly / daily / annual chart and table; loss chart; kWh
@@ -13,6 +13,9 @@
 - [x] Debug view: hour trace, day table, totals/optimizer/loss/energy traces, CSV, pvlib snippet
 - [x] Settings persisted to localStorage and mirrored to the query string (share link button)
 - [x] Standalone single-file build plus a claude.ai Artifact build
+- [x] Terrain shading: horizon from 90 m elevation data, full diffuse model, sun-path chart, cached
+      profile, shared via link (`hp`)
+- [x] Integration tests: full pipeline for Buenos Aires, Alicante, Fresno, Alice Springs and Tokyo
 
 ## Next candidates (not yet requested unless noted)
 
@@ -25,8 +28,10 @@
    - **PVGIS TMY**: best for Europe, but no browser CORS, so it needs a small proxy (for example a
      Cloudflare Worker) or a pre-fetched file.
    - Implement through `WeatherSource`; nothing else should change.
-3. **Terrain shading**: planned and decided, see `docs/plans/terrain-shading.md`. Terrain only, full
-   diffuse model, sun-path chart.
+3. **Terrain shading follow-ups:**
+   - compare with a real PVGIS horizon for a mountain site
+   - optional map rays
+   - a manual editor for trees and buildings (not chosen so far)
 4. **Linke turbidity by location**: a small monthly TL table (coarse grid) bundled, instead of the
    single default of 3.
 5. **Incidence-angle losses and temperature model** (pvlib `iam.physical`, the Faiman model) for

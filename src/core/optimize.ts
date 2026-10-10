@@ -1,5 +1,6 @@
 import { wrap360 } from "./math";
 import { annualTotal } from "./simulate";
+import type { Shading } from "./shading";
 import { fmt as f, type Tracer } from "./trace";
 import type { ModelParams, Orientation } from "./types";
 import type { WeatherYear } from "./weather";
@@ -25,6 +26,8 @@ export interface OptimizeOptions {
   refineTiltSpan?: number;
   refineAzimuthSpan?: number;
   refineStep?: number;
+  /** Terrain shading to apply (optional) */
+  shading?: Shading;
 }
 
 const range = (a: number, b: number, step: number) => {
@@ -48,6 +51,7 @@ export function optimize(w: WeatherYear, params: ModelParams, opts: OptimizeOpti
   const tSpan = opts.refineTiltSpan ?? ts;
   const aSpan = opts.refineAzimuthSpan ?? as;
   const step = opts.refineStep ?? 1;
+  const sh = opts.shading;
 
   const tilts = range(0, 90, ts);
   const azimuths = range(0, 360 - as, as);
@@ -59,10 +63,10 @@ export function optimize(w: WeatherYear, params: ModelParams, opts: OptimizeOpti
   // Flat panel is azimuth-independent: compute once per row.
   for (const tilt of tilts) {
     const row: number[] = [];
-    const flat = tilt === 0 ? annualTotal(w, { tilt: 0, azimuth: 0 }, params) : NaN;
+    const flat = tilt === 0 ? annualTotal(w, { tilt: 0, azimuth: 0 }, params, sh) : NaN;
     if (tilt === 0) evaluations++;
     for (const az of azimuths) {
-      const v = tilt === 0 ? flat : annualTotal(w, { tilt, azimuth: az }, params);
+      const v = tilt === 0 ? flat : annualTotal(w, { tilt, azimuth: az }, params, sh);
       if (tilt !== 0) evaluations++;
       row.push(v);
       if (v > bestV + 1e-9) {
@@ -80,7 +84,7 @@ export function optimize(w: WeatherYear, params: ModelParams, opts: OptimizeOpti
     const azs = tilt === 0 ? [0] : range(coarse.azimuth - aSpan, coarse.azimuth + aSpan, step);
     for (const a of azs) {
       const az = wrap360(a);
-      const v = annualTotal(w, { tilt, azimuth: az }, params);
+      const v = annualTotal(w, { tilt, azimuth: az }, params, sh);
       evaluations++;
       if (v > bestV + 1e-9) {
         bestV = v;

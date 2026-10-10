@@ -34,6 +34,10 @@ this file wins over guesses.
    of atmosphere, clear sky, panel geometry, POA, textbook check), the whole day hour by hour,
    monthly and annual totals, optimizer trace, loss and energy. Also a CSV export of the full year
    and a pvlib snippet that reproduces the hour independently.
+11. **Terrain shading:** hills and mountains block the beam when the sun is behind them and reduce
+    sky light. The horizon is computed from 90 m elevation data out to 30 km, taking into account
+    the panel height above the ground. A sun-path chart shows the skyline. The results show the
+    terrain loss (stat line and monthly column), and the debug view traces every step.
 10. **Settings persistence:** all settings are kept in localStorage, so a page refresh changes
     nothing. All settings are also stored in the query string, so the URL can be shared. Includes:
     location, panel orientation, system size, model settings, chart unit, active tab and debug hour.
@@ -47,9 +51,10 @@ this file wins over guesses.
 | Extras for v1 | **kWh from system size** and the **tilt × azimuth heatmap** |
 | Debug view | Added at the user's request before the build started |
 | Settings | Persist in localStorage, and shareable via the query string (added after v1) |
-| Terrain shading (planned) | Horizon from terrain only; full diffuse model; sun-path chart. See `docs/plans/terrain-shading.md` |
+| Terrain shading | Horizon from terrain only; full diffuse model; sun-path chart. **Implemented.** See `docs/plans/terrain-shading.md` |
+| Integration tests | Five full calculations: Buenos Aires, Alicante, a point in California (Fresno), a point in Australia (Alice Springs), a point in Japan (Tokyo) |
 
-Not chosen for v1: seasonal optima, tracking mounts. Terrain shading is planned next.
+Not chosen so far: seasonal optima, tracking mounts, manual horizon editing.
 
 ## Answers given to the user (keep consistent)
 

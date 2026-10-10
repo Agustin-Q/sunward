@@ -1,4 +1,4 @@
-import { DEFAULTS, fromQuery, mergeState, resolveInitialState, sanitize, shareUrl, toQuery, type AppState } from "./appState";
+import { DEFAULTS, fromQuery, mergeState, profileFromQuery, resolveInitialState, sanitize, shareUrl, toQuery, type AppState } from "./appState";
 
 const custom: AppState = {
   site: { lat: 59.91391, lon: 10.75222, altitude: 23 },
@@ -12,6 +12,7 @@ const custom: AppState = {
   dbgDate: "2025-12-21",
   dbgHour: 11,
   dbgOrient: "opt",
+  horizon: { enabled: true, panelHeight: 6.5 },
 };
 
 describe("settings: query string", () => {
@@ -23,7 +24,7 @@ describe("settings: query string", () => {
   });
   it("uses short, stable keys", () => {
     const q = new URLSearchParams(toQuery(custom));
-    expect([...q.keys()]).toEqual(["lat", "lon", "alt", "tilt", "az", "kwp", "pr", "tl", "alb", "tm", "src", "unit", "tab", "dd", "dh", "do"]);
+    expect([...q.keys()]).toEqual(["lat", "lon", "alt", "tilt", "az", "kwp", "pr", "tl", "alb", "tm", "src", "unit", "tab", "dd", "dh", "do", "hm", "hh"]);
     expect(q.get("lat")).toBe("59.91391");
   });
   it("a partial link only changes what it names", () => {
@@ -52,6 +53,21 @@ describe("settings: query string", () => {
   });
   it("empty values and unknown keys are ignored", () => {
     expect(mergeState(custom, fromQuery("lat=&foo=bar"))).toEqual(custom);
+  });
+});
+
+describe("settings: terrain shading keys", () => {
+  it("hm/hh round-trip and validate", () => {
+    expect(mergeState(DEFAULTS, fromQuery("hm=1&hh=12")).horizon).toEqual({ enabled: true, panelHeight: 12 });
+    expect(mergeState(custom, fromQuery("hm=0")).horizon).toEqual({ enabled: false, panelHeight: 6.5 });
+    expect(mergeState(DEFAULTS, fromQuery("hm=maybe&hh=-4")).horizon).toEqual({ enabled: false, panelHeight: 0 });
+  });
+  it("carries the encoded profile only when shading is on", () => {
+    expect(new URLSearchParams(toQuery(custom, "AbC_-9")).get("hp")).toBe("AbC_-9");
+    expect(new URLSearchParams(toQuery({ ...custom, horizon: { enabled: false, panelHeight: 0 } }, "AbC")).get("hp")).toBeNull();
+    expect(profileFromQuery("?hp=AbC_-9&lat=1")).toBe("AbC_-9");
+    expect(profileFromQuery("hp=<script>")).toBeNull();
+    expect(profileFromQuery("lat=1")).toBeNull();
   });
 });
 
