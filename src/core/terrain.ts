@@ -125,7 +125,7 @@ export async function computeHorizon(
   if (t) {
     const top = result.reduce((a, b) => (b.elevation > a.elevation ? b : a));
     t.group("Terrain horizon");
-    t.add({ key: "terrain.ground", label: "Ground altitude at site (elevation data)", symbol: "z₀", formula: "", substituted: "Copernicus GLO-90 via Open-Meteo", value: groundAltitude, unit: "m" });
+    t.add({ key: "terrain.ground", label: "Ground altitude at site (elevation data)", symbol: "z₀", formula: "", substituted: "terrain elevation data", value: groundAltitude, unit: "m" });
     t.add({ key: "terrain.observer", label: "Observer altitude", symbol: "z_obs", formula: "z₀ + panel height", substituted: `${f(groundAltitude, 1)} + ${f(panelHeight, 1)}`, value: observerAltitude, unit: "m" });
     t.add({ key: "terrain.rays", label: "Rays × samples", symbol: "", formula: `${n} directions × ${dists.length} distances`, substituted: `${f(o.minDistance)}–${f(o.maxDistance)} m, log-spaced`, value: points.length, unit: "points" });
     t.add({ key: "terrain.drop30", label: "Curvature drop at max distance", symbol: "drop", formula: "d² · (1 − k) / (2R)", substituted: `${f(o.maxDistance)}² · (1 − ${f(o.refraction)}) / (2 · 6371008.8)`, value: curvatureDrop(o.maxDistance, o.refraction), unit: "m" });

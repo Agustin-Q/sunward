@@ -18,6 +18,7 @@ import type { SiteMap } from "./ui/map";
 import { DEFAULTS, persist, profileFromQuery, readStored, resolveInitialState, shareUrl, type AppState } from "./ui/appState";
 import { horizonKey, readHorizon, writeHorizon, type CachedHorizon } from "./ui/horizonCache";
 import { openMeteoSampler } from "./ui/elevation";
+import { browserTileFetcher, tileSampler } from "./ui/terrainTiles";
 import { createSunPathChart } from "./ui/sunPath";
 import ComputeWorker from "./worker?worker&inline";
 import { createLogView } from "./ui/logView";
@@ -180,8 +181,26 @@ async function ensureHorizon(): Promise<HorizonProfile | null> {
   const ctrl = (hzAbort = new AbortController());
   setMsg(hzMsg, "Downloading elevation data…");
   try {
-    const sampler = openMeteoSampler({ signal: ctrl.signal, onProgress: (d, n) => setMsg(hzMsg, `Downloading elevation data… ${d} of ${n}`) });
-    const th = await computeHorizon({ lat: state.site.lat, lon: state.site.lon }, state.horizon.panelHeight, sampler);
+    const site = { lat: state.site.lat, lon: state.site.lon };
+    // Primary: AWS Terrain Tiles (no rate limit). Backup: Open-Meteo, throttled to its free limit.
+    let th;
+    try {
+      const tiles = tileSampler({ site, signal: ctrl.signal, fetchTile: browserTileFetcher(), onProgress: (d, n) => setMsg(hzMsg, `Downloading elevation tiles… ${d} of ${n}`) });
+      th = await computeHorizon(site, state.horizon.panelHeight, tiles);
+      appLog.add("info", "terrain", "Elevation from AWS Terrain Tiles");
+    } catch (e) {
+      if ((e as Error).name === "AbortError" || ctrl.signal.aborted) throw e;
+      appLog.add("warn", "terrain", `Terrain tiles failed (${(e as Error)?.message ?? e}); using Open-Meteo instead (slower)`);
+      const om = openMeteoSampler({
+        signal: ctrl.signal,
+        onProgress: (d, n) => setMsg(hzMsg, `Downloading elevation data (backup service)… ${d} of ${n}`),
+        onWait: (ms) => {
+          appLog.add("info", "terrain", `Open-Meteo rate limit: waiting ${Math.round(ms / 1000)} s`);
+          setMsg(hzMsg, `The elevation service asked us to slow down. Waiting ${Math.round(ms / 1000)} s…`);
+        },
+      });
+      th = await computeHorizon(site, state.horizon.panelHeight, om);
+    }
     if (key !== hzKey() || ctrl.signal.aborted) return null; // site or height changed meanwhile
     horizon = { profile: th.profile, points: th.points, groundAltitude: th.groundAltitude, observerAltitude: th.observerAltitude, source: "terrain", computedAt: Date.now() };
     horizonLoadedKey = key;
@@ -192,7 +211,7 @@ async function ensureHorizon(): Promise<HorizonProfile | null> {
   } catch (e) {
     if ((e as Error).name === "AbortError" || ctrl.signal.aborted) return null;
     appLog.add("warn", "terrain", `Elevation download failed: ${(e as Error)?.message ?? e}`, (e as Error)?.stack);
-    setMsg(hzMsg, "Couldn't download elevation data (no internet, or the service is busy). Results below ignore terrain; change a setting to try again.", true);
+    setMsg(hzMsg, "Couldn't download elevation data (no internet, or the services are busy). Results below ignore terrain. Turn terrain off and on to try again; details in Debug → Log.", true);
     return null;
   }
 }
@@ -364,7 +383,7 @@ function renderHorizonDebug() {
   const t = createTracer();
   t.group("Summary");
   if (horizon.groundAltitude !== undefined) {
-    t.add({ key: "terrain.ground", label: "Ground altitude at site (elevation data)", symbol: "z₀", formula: "", substituted: "Copernicus GLO-90 via Open-Meteo", value: horizon.groundAltitude, unit: "m" });
+    t.add({ key: "terrain.ground", label: "Ground altitude at site (elevation data)", symbol: "z₀", formula: "", substituted: "AWS Terrain Tiles (or Open-Meteo backup)", value: horizon.groundAltitude, unit: "m" });
     t.add({ key: "terrain.observer", label: "Observer altitude", symbol: "z_obs", formula: "z₀ + panel height", substituted: `${horizon.groundAltitude.toFixed(1)} + ${state.horizon.panelHeight}`, value: horizon.observerAltitude ?? horizon.groundAltitude, unit: "m" });
   }
   const m = horizonMax(p);

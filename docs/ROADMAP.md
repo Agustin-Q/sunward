@@ -19,6 +19,7 @@
 - [x] Browser tests (Playwright, desktop and phone) at 11 places, terrain, and the log view; they run in CI before deploy
 - [x] Debug → Log (console, uncaught errors, app events) and a commit hash and date in the header
 - [x] Fixed: "instant.epochMilliseconds must be a safe integer" at most longitudes (sun-path chart)
+- [x] Fixed: terrain failed with HTTP 429 from Open-Meteo. Switched to AWS Terrain Tiles, with Open-Meteo as a throttled backup
 
 ## Next candidates (not yet requested unless noted)
 

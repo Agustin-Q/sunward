@@ -157,8 +157,14 @@ is pvlib's exactly. → `src/core/horizon.ts`, `shading.ts`, `terrain.ts`
 It is linearly interpolated, wrapping 355° → 0°.
 
 **From elevation data (ray casting):**
-- 72 rays × 24 log-spaced distances (150 m → 30 km), plus the site, give 1,729 points. These are
-  sampled from Copernicus GLO-90 (90 m) through the Open-Meteo elevation API, in 18 requests.
+- 72 rays × 24 log-spaced distances (150 m → 30 km), plus the site, give 1,729 points.
+- **Primary source: AWS Terrain Tiles** (Mapzen Terrarium PNG, `elevation = R·256 + G + B/256 − 32768`,
+  Web Mercator, public, no rate limit). Zoom depends on distance: z14 under 1.5 km (~7 m/px), z13 under
+  6 km, z12 under 15 km, z11 beyond (~60 m/px). Elevation is bilinearly interpolated, and about 40–60
+  tiles are downloaded.
+- **Backup: Open-Meteo** elevation API (Copernicus GLO-90), used only if the tiles fail. Its free tier
+  (600 calls/min) appears to count each coordinate, so the app sends one request at a time and waits on
+  HTTP 429 (Retry-After, else 20 s, 40 s, …). Regression from a live 429 report on 2026-10-11.
 - `drop(d) = d² · (1 − k) / (2R)`, with k = 0.13 and R = 6,371,008.8 m (61.4 m at 30 km)
 - `e(φ) = max_d atan2(z(d) − drop(d) − (z₀ + h_panel), d)`, clamped at 0 for the model
 - z₀ is the ground altitude at the site from the same data; h_panel is the user's panel height

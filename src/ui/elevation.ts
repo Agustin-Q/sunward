@@ -19,20 +19,40 @@ export interface SamplerOptions {
   fetchFn?: typeof fetch;
   concurrency?: number;
   onProgress?: (done: number, total: number) => void;
+  /** Called when the service asks us to slow down (HTTP 429), with the wait in ms. */
+  onWait?: (ms: number) => void;
   signal?: AbortSignal;
-  /** Wait before retrying a rate-limited request, ms */
+  /** Base wait before retrying a failed request, ms */
   retryDelayMs?: number;
+  /** Retries per request on 429 / 5xx */
+  maxRetries?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Wait from a Retry-After header (seconds or HTTP date), else the fallback. */
+export function retryAfterMs(header: string | null, fallbackMs: number, now = Date.now()): number {
+  if (!header) return fallbackMs;
+  const secs = Number(header);
+  if (Number.isFinite(secs) && secs >= 0) return Math.min(secs * 1000, 120_000);
+  const t = Date.parse(header);
+  return Number.isFinite(t) ? Math.min(Math.max(0, t - now), 120_000) : fallbackMs;
 }
 
 /**
  * Elevation sampler backed by the Open-Meteo elevation API (Copernicus GLO-90).
- * Splits points into requests of 100, runs a few at a time, retries a
- * rate-limited (429) or failed request twice.
+ * Backup source only: the free tier allows 600 calls per minute and appears to count
+ * each coordinate, so a full horizon (~1,700 points) is throttled. Requests go one at a
+ * time by default and wait when the service answers 429 (Retry-After, else 20 s, 40 s, …).
  */
 export function openMeteoSampler(opts: SamplerOptions = {}): ElevationSampler {
   const fetchFn = opts.fetchFn ?? fetch.bind(globalThis);
-  const concurrency = opts.concurrency ?? 3;
-  const retryDelay = opts.retryDelayMs ?? 1200;
+  const concurrency = opts.concurrency ?? 1;
+  const retryDelay = opts.retryDelayMs ?? 20_000;
+  const maxRetries = opts.maxRetries ?? 6;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((res, rej) => {
+    const id = setTimeout(res, ms);
+    opts.signal?.addEventListener("abort", () => { clearTimeout(id); rej(new DOMException("aborted", "AbortError")); }, { once: true });
+  }));
   return async (points) => {
     const batches = chunk(points, MAX_POINTS_PER_REQUEST);
     const results: number[][] = new Array(batches.length);
@@ -46,8 +66,12 @@ export function openMeteoSampler(opts: SamplerOptions = {}): ElevationSampler {
           if (!Array.isArray(e) || e.length !== batches[i].length) throw new Error("elevation service returned an unexpected answer");
           return e.map(Number);
         }
-        if (attempt >= 2 || (r.status !== 429 && r.status < 500)) throw new Error(`elevation service error ${r.status}`);
-        await new Promise((res) => setTimeout(res, retryDelay * (attempt + 1)));
+        // 429 = slow down: wait and retry up to maxRetries; 5xx = server trouble: retry twice quickly
+        const limit = r.status === 429 ? maxRetries : r.status >= 500 ? Math.min(2, maxRetries) : 0;
+        if (attempt >= limit) throw new Error(`elevation service error ${r.status}`);
+        const wait = r.status === 429 ? retryAfterMs(r.headers.get("retry-after"), retryDelay * (attempt + 1)) : Math.min(retryDelay, 2000) * (attempt + 1);
+        opts.onWait?.(wait);
+        await sleep(wait);
       }
     };
     const worker = async () => {

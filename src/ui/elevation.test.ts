@@ -1,4 +1,5 @@
-import { chunk, elevationUrl, openMeteoSampler } from "./elevation";
+import { chunk, elevationUrl, openMeteoSampler, retryAfterMs } from "./elevation";
+const noSleep = async () => {};
 
 const pts = (n: number) => Array.from({ length: n }, (_, i) => ({ lat: 40 + i * 1e-3, lon: -3.7 }));
 const okResponse = (url: string) => {
@@ -18,7 +19,7 @@ describe("Open-Meteo elevation sampler", () => {
   it("returns elevations in input order across batches and reports progress", async () => {
     const calls: string[] = [];
     const progress: number[] = [];
-    const s = openMeteoSampler({ fetchFn: (async (u: string) => { calls.push(u); return okResponse(u); }) as typeof fetch, onProgress: (d) => progress.push(d) });
+    const s = openMeteoSampler({ concurrency: 3, fetchFn: (async (u: string) => { calls.push(u); return okResponse(u); }) as typeof fetch, onProgress: (d) => progress.push(d) });
     const z = await s(pts(1729));
     expect(z.length).toBe(1729);
     expect(calls.length).toBe(18);
@@ -29,14 +30,54 @@ describe("Open-Meteo elevation sampler", () => {
   });
   it("retries a rate-limited request, then succeeds", async () => {
     let n = 0;
-    const s = openMeteoSampler({ retryDelayMs: 1, fetchFn: (async (u: string) => (n++ === 0 ? new Response("", { status: 429 }) : okResponse(u))) as typeof fetch });
+    const waits: number[] = [];
+    const s = openMeteoSampler({ sleep: noSleep, onWait: (ms) => waits.push(ms), fetchFn: (async (u: string) => (n++ === 0 ? new Response("", { status: 429, headers: { "retry-after": "7" } }) : okResponse(u))) as typeof fetch });
     expect((await s(pts(3))).length).toBe(3);
     expect(n).toBe(2);
+    expect(waits).toEqual([7000]); // honours Retry-After
   });
   it("fails clearly on a client error or a malformed answer", async () => {
     const bad = openMeteoSampler({ fetchFn: (async () => new Response("", { status: 400 })) as typeof fetch });
     await expect(bad(pts(3))).rejects.toThrow(/error 400/);
     const weird = openMeteoSampler({ fetchFn: (async () => new Response(JSON.stringify({ elevation: [1] }), { status: 200 })) as typeof fetch });
     await expect(weird(pts(3))).rejects.toThrow(/unexpected/);
+  });
+});
+
+describe("rate limiting (regression: live 429 errors on 2026-10-11)", () => {
+  it("parses Retry-After as seconds or a date, capped at 2 minutes", () => {
+    expect(retryAfterMs("30", 5)).toBe(30_000);
+    expect(retryAfterMs(null, 5)).toBe(5);
+    expect(retryAfterMs("999", 5)).toBe(120_000);
+    expect(retryAfterMs(new Date(1_000_000 + 10_000).toUTCString(), 5, 1_000_000)).toBe(10_000);
+    expect(retryAfterMs("soon", 5)).toBe(5);
+  });
+  it("sends one request at a time by default", async () => {
+    let inFlight = 0, maxInFlight = 0;
+    const s = openMeteoSampler({ fetchFn: (async (u: string) => {
+      maxInFlight = Math.max(maxInFlight, ++inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight--;
+      return okResponse(u);
+    }) as typeof fetch });
+    await s(pts(450));
+    expect(maxInFlight).toBe(1);
+  });
+  it("keeps waiting through repeated 429s and backs off longer each time", async () => {
+    let n = 0;
+    const waits: number[] = [];
+    const s = openMeteoSampler({ sleep: noSleep, retryDelayMs: 1000, onWait: (ms) => waits.push(ms), fetchFn: (async (u: string) => (n++ < 4 ? new Response("", { status: 429 }) : okResponse(u))) as typeof fetch });
+    expect((await s(pts(5))).length).toBe(5);
+    expect(waits).toEqual([1000, 2000, 3000, 4000]);
+  });
+  it("retries server errors only twice", async () => {
+    let n = 0;
+    const s = openMeteoSampler({ sleep: noSleep, fetchFn: (async () => { n++; return new Response("", { status: 503 }); }) as typeof fetch });
+    await expect(s(pts(5))).rejects.toThrow(/error 503/);
+    expect(n).toBe(3);
+  });
+  it("gives up after the retry limit with a clear error", async () => {
+    const s = openMeteoSampler({ sleep: noSleep, maxRetries: 2, fetchFn: (async () => new Response("", { status: 429 })) as typeof fetch });
+    await expect(s(pts(5))).rejects.toThrow(/error 429/);
   });
 });

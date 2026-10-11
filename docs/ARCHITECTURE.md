@@ -3,7 +3,7 @@
 ## Data flow
 
 ```
-settings (AppState) ──► ensureHorizon(): memory → localStorage cache → Open-Meteo (18 requests)
+settings (AppState) ──► ensureHorizon(): memory → localStorage cache → AWS Terrain Tiles (→ Open-Meteo backup)
    │                       └─ computeHorizon(site, panelHeight, sampler) → 72-value profile
    ├──────────────────► worker.ts ──► WeatherSource.year(site, params)    8,760 hours of
    │                       │            └─ clearSkyHour(): SPA → air mass  sun position +
@@ -68,7 +68,8 @@ example `clearsky.ghi`, `poa.global`). Tests assert that traced values equal the
 | Module | Responsibility |
 |---|---|
 | `appState.ts` | `AppState`, `DEFAULTS`, `sanitize()`, `toQuery()` / `fromQuery()`, `mergeState()`, `resolveInitialState()`, `persist()`, `shareUrl()` |
-| `elevation.ts` | `openMeteoSampler()`: batches of 100, 3 at a time, retries on 429/5xx, progress callback |
+| `terrainTiles.ts` | primary `ElevationSampler`: Terrarium tiles, zoom by distance, bilinear sampling, tile maths |
+| `elevation.ts` | backup `openMeteoSampler()`: batches of 100, one at a time, waits on 429 (Retry-After), 2 retries on 5xx |
 | `horizonCache.ts` | localStorage cache of computed profiles keyed by `lat,lon` (4 decimals) and panel height |
 | `sunPathData.ts` / `sunPath.ts` | sun paths for the 21st of each month (SPA), split by skyline; canvas chart |
 | `map.ts` | Leaflet map: Esri World Imagery + labels, draggable pin, rotatable arrow overlay. Also the altitude lookup (Open-Meteo) and geocoding (Nominatim) |
@@ -109,7 +110,7 @@ example `clearsky.ghi`, `poa.global`). Tests assert that traced values equal the
 | Satellite map | yes (Esri tiles) | blocked (no external images) → compass fallback |
 | GPS | yes; needs HTTPS or localhost in most browsers | blocked |
 | Address search / altitude | yes (Nominatim, Open-Meteo) | blocked (no fetch) |
-| Terrain shading | yes (Open-Meteo elevation, cached) | only with a profile already cached in that browser; otherwise an explanatory message |
+| Terrain shading | yes (AWS Terrain Tiles, Open-Meteo backup, cached) | only with a profile already cached in that browser; otherwise an explanatory message |
 | Query-string settings | yes | the query never reaches the page; the share button is hidden |
 | localStorage | yes | yes (per viewer) |
 | CSV download | blob link | `claude.use("downloads")`, declared as capability `{downloads: true}` |

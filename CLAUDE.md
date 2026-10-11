@@ -137,5 +137,6 @@ Madrid with defaults (TL 3, albedo 0.2, Hay-Davies, terrain off) must give an op
 **38° tilt, ~178° azimuth, ~2,500 kWh/m²/yr**. That's a quick sanity check.
 
 Terrain shading is off unless enabled. With it off, every result must stay identical to pvlib.
-Elevation data comes from Open-Meteo, which the build sandbox can't reach. Fake it in browser tests
-by routing `https://api.open-meteo.com/**` (see the Playwright approach in docs/ARCHITECTURE.md).
+Elevation data comes from AWS Terrain Tiles (primary) and Open-Meteo (backup, rate-limited to 600
+calls/min). Never send many Open-Meteo requests in parallel. Browser tests fake both: tiles are
+generated PNGs (pngjs) and Open-Meteo is routed. See `e2e/terrain.spec.ts`.
