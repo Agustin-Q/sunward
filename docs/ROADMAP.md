@@ -9,7 +9,7 @@
 - [x] Satellite map with optimal and yours arrows; compass dial fallback; tilt side view
 - [x] Monthly / daily / annual chart and table; loss chart; kWh
 - [x] Tilt × azimuth heatmap (tap a cell to set)
-- [x] Weather-source dropdown (clear sky now; PVGIS and NASA POWER listed but disabled)
+- [x] Weather-source dropdown: clear sky and NASA POWER
 - [x] Debug view: hour trace, day table, totals/optimizer/loss/energy traces, CSV, pvlib snippet
 - [x] Settings persisted to localStorage and mirrored to the query string (share link button)
 - [x] Standalone single-file build plus a claude.ai Artifact build
@@ -19,6 +19,7 @@
 - [x] Browser tests (Playwright, desktop and phone) at 11 places, terrain, and the log view; they run in CI before deploy
 - [x] Debug → Log (console, uncaught errors, app events) and a commit hash and date in the header
 - [x] Fixed: "instant.epochMilliseconds must be a safe integer" at most longitudes (sun-path chart)
+- [x] NASA POWER real weather (2019–2023 mean, browser download, cached, falls back to clear sky)
 - [x] Fixed: terrain failed with HTTP 429 from Open-Meteo. Switched to AWS Terrain Tiles, with Open-Meteo as a throttled backup
 
 ## Next candidates (not yet requested unless noted)
@@ -26,12 +27,8 @@
 1. **Best tilt per month line** (offered to the user, not confirmed). Per month, the optimal tilt
    and its kWh/m² next to the fixed optimum. Useful for adjustable mounts (two-season adjustment
    typically gains a few %).
-2. **Real-weather sources:**
-   - **NASA POWER** first: global, browser CORS OK. Hourly data needs a typical year built from
-     several years; the climatology endpoint gives monthly means.
-   - **PVGIS TMY**: best for Europe, but no browser CORS, so it needs a small proxy (for example a
-     Cloudflare Worker) or a pre-fetched file.
-   - Implement through `WeatherSource`; nothing else should change.
+2. **Real-weather sources:** NASA POWER is done. PVGIS is **not planned**: the user ruled out
+   anything that needs a backend.
 3. **Terrain shading follow-ups:**
    - compare with a real PVGIS horizon for a mountain site
    - optional map rays

@@ -27,8 +27,8 @@ this file wins over guesses.
    year. Negative monthly loss is expected (see "Answers given" below).
 6. **Electricity:** kWh = POA kWh/m² × kWp × performance ratio (default 5 kWp, PR 0.80).
 7. **Heatmap:** tilt × azimuth grid showing annual POA as % of the optimum. Tap a cell to try it.
-8. **Weather-source dropdown:** v1 has only **Clear sky (offline)**. The design must allow PVGIS,
-   NASA POWER and others later, through the same dropdown, with no changes elsewhere.
+8. **Weather-source dropdown:** **Clear sky (offline)** and **NASA POWER** (real weather, 2019–2023
+   mean, downloaded in the browser). PVGIS was dropped because it needs a server.
 9. **Debug view:** every calculation step shown with its value, formula and substituted numbers, so
    a wrong calculation is easy to find. Covers one chosen hour (inputs, time, sun, atmosphere, top
    of atmosphere, clear sky, panel geometry, POA, textbook check), the whole day hour by hour,
@@ -56,6 +56,7 @@ this file wins over guesses.
 | Debug log | Debug → Log shows console output, uncaught errors and app events, with copy for bug reports (requested after a live error) |
 | Version stamp | Header shows the short commit hash and commit date so it's clear when the live app updated |
 | Regression tests | Every bug found gets a test that fails without the fix. Location bugs also get a browser test at that place |
+| Weather sources | Only sources that work without a backend. NASA POWER is implemented; PVGIS is not (its API forbids browser calls) |
 | Mandatory tests | **Buenos Aires and Alicante are mandatory.** They must always exist, pass and never be skipped or loosened. This is enforced by guard tests, the generator and `npm run check` |
 
 Not chosen so far: seasonal optima, tracking mounts, manual horizon editing.

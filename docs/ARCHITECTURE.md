@@ -38,7 +38,8 @@ main.ts ──► simulateYear(weather, yours/optimal) ─► monthly / daily / 
 | `horizon.ts` | `HorizonProfile`, interpolation, sun visibility, Dozier sky view factor, `traceShade`, URL encode/decode |
 | `shading.ts` | `buildShading(weather, profile)`: per-hour visibility plus the ground's sky view |
 | `terrain.ts` | ray casting over elevation data with an injected `ElevationSampler`; great-circle, curvature |
-| `weather.ts` | `WeatherSource` interface, `clearSkySource`, registry `WEATHER_SOURCES` (PVGIS / NASA disabled) |
+| `weather.ts` | `WeatherSource` interface, `clearSkySource`, `nasaPowerDescriptor`, registry `WEATHER_SOURCES` |
+| `weatherData.ts` | data-backed sources: `parseNasaPower`, `averageYears`, `seriesHour` (traced), `seriesSource`, compact encode/decode |
 | `simulate.ts` | `simulateYear(w, o, params, t?, shading?)` → `YearResult` (monthly, dailyAvg, annual, components) |
 | `optimize.ts` | grid + refinement, heatmap; `opts.shading` |
 | `compare.ts` | deviation, monthly/annual loss |
@@ -51,6 +52,12 @@ main.ts ──► simulateYear(weather, yours/optimal) ─► monthly / daily / 
 Each step function accepts `t?: Tracer` and calls `t?.add({ key, label, symbol, formula,
 substituted, value, unit })`. `t.group(name)` sets the section heading. Keys are stable (for
 example `clearsky.ghi`, `poa.global`). Tests assert that traced values equal the returned values.
+
+### Data-backed weather sources
+
+The UI downloads the data (`ui/nasaPower.ts`, `ensureWeather()` in `main.ts`) and passes an
+`HourlySeries` to the worker. The worker builds the year with `seriesSource()`. The core stays
+free of network calls.
 
 ### Adding a weather source
 
@@ -68,6 +75,7 @@ example `clearsky.ghi`, `poa.global`). Tests assert that traced values equal the
 | Module | Responsibility |
 |---|---|
 | `appState.ts` | `AppState`, `DEFAULTS`, `sanitize()`, `toQuery()` / `fromQuery()`, `mergeState()`, `resolveInitialState()`, `persist()`, `shareUrl()` |
+| `nasaPower.ts` | NASA POWER download (one year per request, in sequence) and localStorage cache |
 | `terrainTiles.ts` | primary `ElevationSampler`: Terrarium tiles, zoom by distance, bilinear sampling, tile maths |
 | `elevation.ts` | backup `openMeteoSampler()`: batches of 100, one at a time, waits on 429 (Retry-After), 2 retries on 5xx |
 | `horizonCache.ts` | localStorage cache of computed profiles keyed by `lat,lon` (4 decimals) and panel height |

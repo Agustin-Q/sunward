@@ -30,13 +30,14 @@ describe("weather year", () => {
     expect(Math.max(...y.ghi)).toBeGreaterThan(900);
     expect(Math.min(...y.ghi)).toBe(0);
   });
-  it("source registry: clear sky available, others listed but disabled", () => {
+  it("source registry: clear sky and NASA POWER; no PVGIS (it would need a server)", () => {
     expect(getSource("clearsky")).toBe(clearSkySource);
-    expect(WEATHER_SOURCES.filter((s) => s.available).map((s) => s.id)).toEqual(["clearsky"]);
-    expect(WEATHER_SOURCES.map((s) => s.id)).toContain("pvgis");
+    expect(WEATHER_SOURCES.map((s) => s.id)).toEqual(["clearsky", "nasa-power"]);
+    expect(WEATHER_SOURCES.every((s) => s.available)).toBe(true);
+    expect(() => getSource("pvgis")).toThrow();
     expect(() => getSource("nope")).toThrow();
   });
-  it("unavailable sources reject clearly", async () => {
-    await expect(getSource("pvgis").year(siteOf("madrid"), params)).rejects.toThrow(/not available/);
+  it("the NASA POWER registry entry needs downloaded data", async () => {
+    await expect(getSource("nasa-power").year(siteOf("madrid"), params)).rejects.toThrow(/data not loaded/);
   });
 });

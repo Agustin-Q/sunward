@@ -4,9 +4,9 @@ captureConsole(appLog);
 captureGlobalErrors(appLog);
 import "./ui/styles.css";
 import {
-  WEATHER_SOURCES, buildShading, compare, computeHorizon, createTracer, decodeProfile, encodeProfile, energyKWh, getSource,
+  WEATHER_SOURCES, buildShading, clearSkySource, nasaPowerDescriptor, seriesSource, compare, computeHorizon, createTracer, decodeProfile, encodeProfile, energyKWh, getSource,
   horizonMax, hourRows, optimize, pvlibSnippet, rowsToCsv, simulateYear, skyViewFactor, textbookSun, traceHour,
-  type HorizonProfile, type ModelParams, type OptimizeResult, type Orientation, type Shading, type Site, type TraceStep,
+  type HorizonProfile, type HourlySeries, type ModelParams, type WeatherSource, type OptimizeResult, type Orientation, type Shading, type Site, type TraceStep,
   type WeatherYear, type YearResult,
 } from "./core";
 import { createCompass, renderTiltView } from "./ui/compass";
@@ -19,6 +19,7 @@ import { DEFAULTS, persist, profileFromQuery, readStored, resolveInitialState, s
 import { horizonKey, readHorizon, writeHorizon, type CachedHorizon } from "./ui/horizonCache";
 import { openMeteoSampler } from "./ui/elevation";
 import { browserTileFetcher, tileSampler } from "./ui/terrainTiles";
+import { fetchNasaPower, readCachedSeries, writeCachedSeries } from "./ui/nasaPower";
 import { createSunPathChart } from "./ui/sunPath";
 import ComputeWorker from "./worker?worker&inline";
 import { createLogView } from "./ui/logView";
@@ -226,15 +227,66 @@ function scheduleRecompute() {
   timer = window.setTimeout(recompute, 350);
 }
 
-async function computeInline(site: Site, params: ModelParams, sourceId: string, profile: HorizonProfile | null) {
+// ---------- weather data (NASA POWER, downloaded in the browser) ----------
+let weatherSeries: HourlySeries | null = null;
+let weatherKey = "";
+let weatherAbort: AbortController | null = null;
+/** Source used for the current results (falls back to clear sky if data can't be loaded). */
+let activeSource: WeatherSource = clearSkySource;
+const srcMsg = $("source-msg");
+
+/** Load the data series for the selected source; null means "use clear sky". */
+async function ensureWeather(): Promise<HourlySeries | null> {
+  if (state.sourceId !== "nasa-power") {
+    weatherAbort?.abort();
+    setMsg(srcMsg, "");
+    activeSource = clearSkySource;
+    return null;
+  }
+  const key = `${state.site.lat.toFixed(1)},${state.site.lon.toFixed(1)}`;
+  const label = nasaPowerDescriptor.label;
+  if (weatherSeries && weatherKey === key) {
+    activeSource = seriesSource("nasa-power", label, nasaPowerDescriptor.description, weatherSeries);
+    return weatherSeries;
+  }
+  let s = readCachedSeries(state.site.lat, state.site.lon);
+  if (!s) {
+    if (inArtifact) {
+      setMsg(srcMsg, "NASA POWER can't be downloaded inside Claude. Open the live app for real weather. Showing clear sky.", true);
+      activeSource = clearSkySource;
+      return null;
+    }
+    weatherAbort?.abort();
+    const ctrl = (weatherAbort = new AbortController());
+    setMsg(srcMsg, "Downloading NASA POWER weather data…");
+    try {
+      s = await fetchNasaPower(state.site.lat, state.site.lon, { signal: ctrl.signal, onProgress: (d, n) => setMsg(srcMsg, `Downloading NASA POWER weather data… year ${d} of ${n}`) });
+      writeCachedSeries(state.site.lat, state.site.lon, s);
+      appLog.add("info", "weather", `${s.label} downloaded for ${key}${s.missing ? ` (${s.missing} hours missing, set to 0)` : ""}`);
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return null;
+      appLog.add("error", "weather", `NASA POWER failed: ${(e as Error)?.message ?? e}`, (e as Error)?.stack);
+      setMsg(srcMsg, `Couldn't load NASA POWER weather (${(e as Error).message}). Showing clear sky instead. Details in Debug → Log.`, true);
+      activeSource = clearSkySource;
+      return null;
+    }
+  }
+  weatherSeries = s;
+  weatherKey = key;
+  setMsg(srcMsg, `Using ${s.label}${s.missing ? `, ${s.missing} hours missing` : ""}.`);
+  activeSource = seriesSource("nasa-power", label, nasaPowerDescriptor.description, s);
+  return s;
+}
+
+async function computeInline(site: Site, params: ModelParams, sourceId: string, profile: HorizonProfile | null, series: HourlySeries | null = null) {
   await new Promise((r) => setTimeout(r, 30)); // let the busy notice paint
-  const weather = await getSource(sourceId).year(site, params);
+  const weather = await (series ? seriesSource(sourceId, series.label, "", series) : getSource(sourceId)).year(site, params);
   const t = createTracer();
   const opt = optimize(weather, params, { shading: profile ? buildShading(weather, profile) : undefined }, t);
   return { weather, opt, optSteps: t.steps };
 }
 
-function computeInWorker(site: Site, params: ModelParams, sourceId: string, horizon: HorizonProfile | null): Promise<{ weather: WeatherYear; opt: OptimizeResult; optSteps: TraceStep[] }> {
+function computeInWorker(site: Site, params: ModelParams, sourceId: string, horizon: HorizonProfile | null, series: HourlySeries | null = null): Promise<{ weather: WeatherYear; opt: OptimizeResult; optSteps: TraceStep[] }> {
   return new Promise((resolve, reject) => {
     const id = ++reqId;
     const onMsg = (e: MessageEvent) => {
@@ -245,32 +297,33 @@ function computeInWorker(site: Site, params: ModelParams, sourceId: string, hori
     };
     worker!.addEventListener("message", onMsg);
     worker!.addEventListener("error", (err) => reject(err), { once: true });
-    worker!.postMessage({ id, site, params, sourceId, horizon });
+    worker!.postMessage({ id, site, params, sourceId, horizon, series });
   });
 }
 
 let computeSeq = 0;
 async function recompute() {
   const seq = ++computeSeq;
-  const site = { ...state.site }, params = { ...state.params }, sourceId = state.sourceId;
+  const site = { ...state.site }, params = { ...state.params };
   $("busy").hidden = false;
   try {
-    const profile = await ensureHorizon();
+    const [profile, series] = await Promise.all([ensureHorizon(), ensureWeather()]);
     if (seq !== computeSeq) return;
+    const sourceId = series ? "nasa-power" : "clearsky";
     let r;
     try {
-      r = worker ? await computeInWorker(site, params, sourceId, profile) : await computeInline(site, params, sourceId, profile);
+      r = worker ? await computeInWorker(site, params, sourceId, profile, series) : await computeInline(site, params, sourceId, profile, series);
     } catch (e) {
       if (!worker) throw e;
       appLog.add("warn", "worker", `Background calculation failed, retrying on the main thread: ${(e as Error)?.message ?? e}`);
       worker = null; // worker blocked or failed: fall back to the main thread
-      r = await computeInline(site, params, sourceId, profile);
+      r = await computeInline(site, params, sourceId, profile, series);
     }
     if (seq !== computeSeq) return;
     const shading = profile ? buildShading(r.weather, profile) : undefined;
     const optYear = simulateYear(r.weather, r.opt.best, params, undefined, shading);
     computed = { ...r, optYear, youYear: optYear, shading };
-    appLog.add("info", "calculation", `Year computed for ${site.lat.toFixed(4)}, ${site.lon.toFixed(4)} (${site.altitude} m)${profile ? ", with terrain" : ""}: optimum ${r.opt.best.tilt}° / ${Math.round(r.opt.best.azimuth)}°, ${r.opt.annual.toFixed(0)} kWh/m²`);
+    appLog.add("info", "calculation", `Year computed for ${site.lat.toFixed(4)}, ${site.lon.toFixed(4)} (${site.altitude} m)${profile ? ", with terrain" : ""}, ${series ? series.label : "clear sky"}: optimum ${r.opt.best.tilt}° / ${Math.round(r.opt.best.azimuth)}°, ${r.opt.annual.toFixed(0)} kWh/m²`);
     save(); // URL now carries the profile when shading is on
     refreshDerived();
   } catch (e) {
@@ -311,9 +364,9 @@ function refreshDerived() {
   $("s-kwh").textContent = fmtNum(eYou);
   $("s-kwh-sub").textContent = `kWh with ${state.sys.kWp} kWp, PR ${state.sys.performanceRatio}\n${fmtNum(eOpt - eYou)} kWh/yr less than optimal`;
 
-  const src = getSource(state.sourceId);
+  const src = activeSource;
   $("caveat").textContent = `${state.siteIsExample ? "Example location: Madrid. Set yours on the left. " : ""}${
-    src.id === "clearsky" ? "Clear-sky data ignores clouds, so totals run high (often 20–35% in sunny climates, more in cloudy ones). The optimal angles and your loss percentage are much more reliable than the absolute numbers." : src.description}`;
+    src.id === "clearsky" ? "Clear-sky data ignores clouds, so totals run high (often 20–35% in sunny climates, more in cloudy ones). The optimal angles and your loss percentage are much more reliable than the absolute numbers." : `Real weather: ${weatherSeries?.label ?? "NASA POWER"}, satellite-derived on a coarse grid (about 50–100 km), so local effects like sea breezes or fog aren't captured. Totals include clouds.`}`;
 
   const tl = $("terrain-line");
   if (youOpen) {
@@ -353,7 +406,7 @@ async function renderDebug() {
   const o = state.dbgOrient === "opt" ? computed.opt.best : state.you;
   const idx = Math.min(8759, Math.max(0, dateToHourIndex(state.dbgDate, state.dbgHour)));
   const epoch = computed.weather.epochMs[idx];
-  const src = getSource(state.sourceId);
+  const src = activeSource;
   const profile = activeProfile();
   const tr = await traceHour(src, state.site, state.params, o, epoch, profile);
   renderSteps($("dbg-steps"), tr.steps);

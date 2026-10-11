@@ -148,6 +148,28 @@ Reference optima (pvlib brute force, TL 3, albedo 0.2, Hay-Davies):
 
 → `src/core/compare.ts`, `src/core/energy.ts`
 
+## 9b. Real weather: NASA POWER
+
+Selectable in Model settings → Weather data. It's downloaded in the browser with no server: one
+request per year to `power.larc.nasa.gov/api/temporal/hourly/point` (UTC, JSON, community RE) with
+`ALLSKY_SFC_SW_DWN` (GHI), `ALLSKY_SFC_SW_DNI` (DNI) and `ALLSKY_SFC_SW_DIFF` (DHI).
+
+- **Years:** 2019–2023, averaged hour by hour (Feb 29 dropped; the fill value −999 and negatives
+  are treated as missing, and hours missing in every year become 0).
+- **Timing:** each hourly value covers the hour starting at its timestamp, so it matches the model
+  step at hh:30 UTC.
+- **Per hour:** the sun position and I₀ are computed as before; GHI, DNI and DHI come from the data.
+  When the sun is below the horizon the irradiance is set to 0 (an hourly mean can be non-zero around
+  sunrise and sunset). The transposition, terrain, optimizer, loss and kWh steps don't change.
+- **Cache:** localStorage, per 0.1° of latitude and longitude (NASA's solar grid is about 1°), stored
+  as integer W/m².
+- **If the download fails** (no internet, the browser blocks it, an HTTP error), the app says so,
+  logs it and uses clear sky.
+- **Reference test:** `reference/generate_weather_fixtures.py` builds a deterministic cloudy year for
+  Alicante and Buenos Aires and computes POA with pvlib from exactly that data. The TypeScript
+  pipeline matches within 0.2% annually.
+- **PVGIS is not offered.** Its API forbids browser calls, so it would need a server.
+
 ## 10. Terrain (horizon) shading
 
 This is optional; it's on when the user enables **Terrain shading**. Without it, every value above

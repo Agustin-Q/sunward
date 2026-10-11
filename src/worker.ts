@@ -1,12 +1,13 @@
 /// <reference lib="webworker" />
-import { buildShading, createTracer, getSource, optimize, type HorizonProfile, type ModelParams, type Site } from "./core";
+import { buildShading, createTracer, getSource, optimize, seriesSource, type HorizonProfile, type HourlySeries, type ModelParams, type Site } from "./core";
 
-export interface ComputeRequest { id: number; site: Site; params: ModelParams; sourceId: string; horizon: HorizonProfile | null }
+export interface ComputeRequest { id: number; site: Site; params: ModelParams; sourceId: string; horizon: HorizonProfile | null; series?: HourlySeries | null }
 
 self.onmessage = async (e: MessageEvent<ComputeRequest>) => {
-  const { id, site, params, sourceId, horizon } = e.data;
+  const { id, site, params, sourceId, horizon, series } = e.data;
   try {
-    const weather = await getSource(sourceId).year(site, params);
+    const src = series ? seriesSource(sourceId, series.label, "", series) : getSource(sourceId);
+    const weather = await src.year(site, params);
     const t = createTracer();
     const shading = horizon ? buildShading(weather, horizon) : undefined;
     const opt = optimize(weather, params, { shading }, t);

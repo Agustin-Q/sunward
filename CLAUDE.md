@@ -58,9 +58,9 @@ npm run fixtures      # regenerate all pvlib/numpy reference values (pip install
    re-implementation. When you add a step:
    - add a trace entry with label, symbol, formula and substituted numbers
    - add a test asserting `traced(t, key)` equals the returned value
-6. **Weather sources are pluggable** (`WeatherSource` in `src/core/weather.ts`). Only "Clear sky
-   (offline)" is implemented. PVGIS and NASA POWER are listed as disabled placeholders. A new
-   source must not change any other module.
+6. **Weather sources must work without a backend** (user decision). NASA POWER is implemented;
+   PVGIS is ruled out because it forbids browser calls. **Weather sources are pluggable** (`WeatherSource` in `src/core/weather.ts`). Clear sky and NASA POWER are implemented.
+   A new source must not change any other module.
 7. **Settings:** every user setting lives in `AppState` (`src/ui/appState.ts`):
    - It persists to localStorage (`sunward.v1`) and is mirrored into the query string on every
      change, so a refresh keeps everything and the address bar is always a shareable link.

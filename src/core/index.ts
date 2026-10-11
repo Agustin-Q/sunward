@@ -10,6 +10,7 @@ export * from "./horizon";
 export * from "./shading";
 export * from "./terrain";
 export * from "./weather";
+export * from "./weatherData";
 export * from "./simulate";
 export * from "./optimize";
 export * from "./compare";

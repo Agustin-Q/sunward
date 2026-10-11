@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc -p .",
-    "fixtures": "python reference/generate_fixtures.py && python reference/generate_shading_fixtures.py && python reference/generate_integration_fixtures.py",
+    "fixtures": "python reference/generate_fixtures.py && python reference/generate_shading_fixtures.py && python reference/generate_integration_fixtures.py && python reference/generate_weather_fixtures.py",
     "artifact": "vite build && node scripts/to-artifact.mjs",
     "check": "tsc -p . && vitest run && npm run test:mandatory",
     "test:mandatory": "vitest run src/core/__tests__/integration.test.ts -t \"mandatory|buenosAires|alicante\"",

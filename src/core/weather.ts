@@ -112,18 +112,29 @@ const unavailable = (id: string, label: string, description: string): WeatherSou
   description,
   available: false,
   hour() {
-    throw new Error(`${label} is not available yet`);
+    throw new Error(`${label}: data not loaded`);
   },
   async year() {
-    throw new Error(`${label} is not available yet`);
+    throw new Error(`${label}: data not loaded`);
   },
 });
 
-export const WEATHER_SOURCES: WeatherSource[] = [
-  clearSkySource,
-  unavailable("pvgis", "PVGIS typical year (coming soon)", "EU JRC typical meteorological year — real clouds."),
-  unavailable("nasa-power", "NASA POWER (coming soon)", "Global satellite-derived climatology."),
-];
+/** Years averaged for NASA POWER (complete years, fetched one per request). */
+export const NASA_POWER_YEARS = [2019, 2020, 2021, 2022, 2023];
+
+/**
+ * Registry entry for NASA POWER. The data is downloaded by the UI (browser fetch,
+ * no backend) and passed in as an HourlySeries; see seriesSource() in weatherData.ts.
+ * This entry only describes it — its year() needs that data.
+ */
+export const nasaPowerDescriptor: WeatherSource = {
+  ...unavailable("nasa-power", "NASA POWER (real weather, 2019–2023 mean)", ""),
+  available: true,
+  description: "Satellite-derived hourly sunlight with real clouds, averaged over 2019–2023. Downloaded from NASA once per location, then cached.",
+};
+
+// PVGIS was planned but its API forbids browser calls, so it would need a server. Not offered.
+export const WEATHER_SOURCES: WeatherSource[] = [clearSkySource, nasaPowerDescriptor];
 
 export function getSource(id: string): WeatherSource {
   const s = WEATHER_SOURCES.find((x) => x.id === id);

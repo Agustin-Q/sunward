@@ -15,7 +15,8 @@ Runs entirely in the browser.
 - Optimal tilt/azimuth, monthly totals, daily averages, annual total, loss % per month and per year.
 - Electricity estimate from system size (kWp) and performance ratio.
 - Tilt × azimuth heatmap (% of the best orientation); tap a cell to try it.
-- Weather-source dropdown: *Clear sky (offline)* now; PVGIS and NASA POWER are listed for later.
+- Weather-source dropdown: *Clear sky (offline)* or *NASA POWER* real weather (2019–2023 hourly mean,
+  downloaded in the browser and cached; falls back to clear sky if unreachable).
 - Debug view: every calculation step for any hour with formula, substituted numbers and result;
   the full day hour by hour; totals, optimizer, loss and energy steps; CSV export of the whole year;
   a pvlib-python snippet that reproduces the selected hour independently.
