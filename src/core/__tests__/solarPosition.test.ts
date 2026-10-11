@@ -45,3 +45,12 @@ describe("textbook approximation (learning aid)", () => {
     close(textbookSun(Date.UTC(2025, 5, 21, 12), { lat: 0, lon: 0, altitude: 0 }).declination, 23.45, 0, 0.1);
   });
 });
+
+describe("solar position: fractional instants (regression)", () => {
+  it("accepts a non-integer epoch (rounded to whole ms) instead of throwing", () => {
+    const site = { lat: 38.71729, lon: 0.16168, altitude: 320 };
+    const ms = Date.UTC(2025, 5, 21, 12) + 0.2;
+    expect(() => sunPosition(ms, site)).not.toThrow();
+    expect(sunPosition(ms, site).zenith).toBeCloseTo(sunPosition(Math.round(ms), site).zenith, 10);
+  });
+});

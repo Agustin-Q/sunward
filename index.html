@@ -16,6 +16,7 @@
       <div>
         <h1>Sunward</h1>
         <p class="tag">Best tilt and direction for solar panels, and what yours costs you</p>
+        <p class="build">Version <a id="build-stamp" target="_blank" rel="noopener" href="https://github.com/Agustin-Q/sunward"></a></p>
       </div>
     </div>
     <div class="top-actions">
@@ -23,7 +24,7 @@
     <nav class="tabs" role="tablist" aria-label="Views">
       <button role="tab" id="tab-results" aria-selected="true" data-tab="results">Results</button>
       <button role="tab" id="tab-heatmap" aria-selected="false" data-tab="heatmap">Heatmap</button>
-      <button role="tab" id="tab-debug" aria-selected="false" data-tab="debug">Debug</button>
+      <button role="tab" id="tab-debug" aria-selected="false" data-tab="debug">Debug <span id="log-badge" class="badge" hidden></span></button>
     </nav>
     </div>
   </header>
@@ -172,6 +173,25 @@
       </section>
 
       <section id="view-debug" class="view" role="tabpanel" aria-labelledby="tab-debug" hidden>
+        <div class="card" id="log-card">
+          <div class="card-head">
+            <h3>Log</h3>
+            <span class="hint" id="log-summary"></span>
+          </div>
+          <div class="row wrap">
+            <label>Show
+              <select id="log-filter">
+                <option value="all">Everything</option>
+                <option value="warn">Warnings and errors</option>
+                <option value="error">Errors only</option>
+              </select>
+            </label>
+            <button id="btn-log-copy" class="btn ghost small">Copy log</button>
+            <button id="btn-log-clear" class="btn ghost small">Clear</button>
+            <span id="log-copy-msg" class="msg" role="status"></span>
+          </div>
+          <div id="log-list" class="log-list" role="log" aria-live="polite"></div>
+        </div>
         <div class="card">
           <div class="card-head"><h3>One hour, every step</h3></div>
           <div class="row wrap">

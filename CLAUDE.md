@@ -19,7 +19,9 @@ Read these before changing things:
 npm install
 npm test              # vitest: all unit tests (core + ui helpers + settings)
 npm run typecheck     # tsc, strict
-npm run check         # typecheck + tests (run before finishing any change)
+npm run check         # typecheck + unit/integration tests (run before finishing any change)
+npm run test:e2e      # browser tests on dist/ (build first); in the cloud workspace set PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+npm run check:all     # check + build + browser tests (what CI runs before deploying)
 npm run dev           # vite dev server (full features: map, GPS on localhost, search)
 npm run build         # dist/index.html: single self-contained file
 npm run artifact      # build + dist/artifact.html (claude.ai Artifact variant)
@@ -101,6 +103,28 @@ reference/           generate_fixtures.py (pvlib)
 scripts/             to-artifact.mjs (strips the HTML skeleton for the Artifact host)
 docs/                requirements, calculations, architecture, roadmap
 ```
+
+## Browser tests and the in-app log
+
+- `e2e/` (Playwright, desktop and phone) opens the built app at 11 places, every tab, terrain with a faked
+  elevation service and the Debug → Log view. Each test fails on any uncaught error, console error,
+  "Calculation failed" message or a visible error badge. Add a place there whenever a location-specific
+  bug is found. The first such bug: longitude 0.16168 gave fractional ms, and the SPA library threw.
+- `src/ui/logStore.ts` captures console output, uncaught errors and promise rejections from the
+  first line of `main.ts`. Log app events with `appLog.add(level, source, message, detail?)`. Users read
+  it in Debug → Log and can copy it into a bug report.
+- `src/ui/buildInfo.ts`: the header shows the short commit hash and commit date, injected by
+  `vite.config.ts` from git. Use it to confirm which version is live.
+
+## Workflow preferences (from the user)
+
+- **Small changes:** don't run the test suite locally before pushing. Commit, push to `main`, then watch
+  the GitHub Actions run (`test`, `browser`, `build`, `deploy`) and report the result. Fix forward
+  if it fails.
+- **Larger changes** (new features, model or calculation changes): run `npm run check` (and the browser
+  tests when the UI changes) before pushing, then still watch the Actions run.
+- `main` requires **linear history**: no merge commits. Rebase (`git pull --rebase`) instead of merging.
+- Every bug fix comes with a test that fails without the fix (see "Browser tests" above).
 
 ## Verification habit
 

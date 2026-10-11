@@ -25,7 +25,7 @@ export const PATH_MONTHS: { month: number; label: string }[] = [
 export function sunPaths(site: Site, stepMin = 10): SunPath[] {
   return PATH_MONTHS.map(({ month, label }) => {
     // Mean solar midnight → next midnight: shift UTC by the longitude.
-    const start = Date.UTC(2025, month, 21) - (site.lon / 15) * 3_600_000;
+    const start = Math.round(Date.UTC(2025, month, 21) - (site.lon / 15) * 3_600_000); // whole ms (SPA library requirement)
     const points: SunPath["points"] = [];
     const hours: SunPath["hours"] = [];
     for (let m = 0; m <= 24 * 60; m += stepMin) {

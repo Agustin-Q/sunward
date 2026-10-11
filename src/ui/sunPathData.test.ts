@@ -31,3 +31,12 @@ describe("sun-path data", () => {
     expect(runs[1].points[0]).toBe(runs[0].points[runs[0].points.length - 1]);
   });
 });
+
+describe("sun paths at arbitrary longitudes (regression)", () => {
+  it.each([0.16168, -58.3816, 139.6503, -119.7871, 133.8807])("longitude %s does not throw and gives 7 paths", (lon) => {
+    const paths = sunPaths({ lat: 38.71729, lon, altitude: 320 });
+    expect(paths).toHaveLength(7);
+    expect(paths[0].points.length).toBeGreaterThan(0);
+    for (const p of paths[0].points) expect(Number.isInteger(p.epochMs)).toBe(true);
+  });
+});

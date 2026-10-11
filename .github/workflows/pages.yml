@@ -28,8 +28,28 @@ jobs:
       # typecheck + full suite + the mandatory Buenos Aires / Alicante integration tests
       - run: npm run check
 
+  browser:
+    # Opens the built app in Chromium (desktop + phone) at many places and fails on any error.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
   build:
-    needs: test
+    needs: [test, browser]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

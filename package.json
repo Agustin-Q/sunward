@@ -10,12 +10,15 @@
     "fixtures": "python reference/generate_fixtures.py && python reference/generate_shading_fixtures.py && python reference/generate_integration_fixtures.py",
     "artifact": "vite build && node scripts/to-artifact.mjs",
     "check": "tsc -p . && vitest run && npm run test:mandatory",
-    "test:mandatory": "vitest run src/core/__tests__/integration.test.ts -t \"mandatory|buenosAires|alicante\""
+    "test:mandatory": "vitest run src/core/__tests__/integration.test.ts -t \"mandatory|buenosAires|alicante\"",
+    "test:e2e": "playwright test",
+    "check:all": "npm run check && npm run build && npm run test:e2e"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2",

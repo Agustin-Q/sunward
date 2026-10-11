@@ -130,6 +130,21 @@ The Artifact is published from `dist/artifact.html` with `capabilities: {downloa
   - `@types/leaflet`
 - Reference only: Python `pvlib` (fixtures).
 
+## Browser tests (e2e/)
+
+`npm run build && npm run test:e2e` runs Playwright against `dist/index.html` in desktop and phone
+viewports. External network is blocked; the elevation service is faked where needed. CI runs these
+before deploying (`browser` job). The fixture in `e2e/fixtures.ts` fails any test on uncaught errors,
+console errors, a "Calculation failed" message or a visible error badge.
+
+## In-app log and version stamp
+
+- `ui/logStore.ts`: ring buffer (500 entries) fed by console capture, `error`/`unhandledrejection`
+  listeners and `appLog.add()`. `ui/logView.ts` renders it in Debug → Log, with a filter, copy and clear,
+  plus an error badge on the Debug tab.
+- `ui/buildInfo.ts`: commit hash and date, from `define` in `vite.config.ts`, shown in the header and
+  linked to the commit.
+
 ## Browser testing without network
 
 The build sandbox blocks outside hosts, so the elevation service is faked with Playwright

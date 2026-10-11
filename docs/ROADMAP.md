@@ -16,6 +16,9 @@
 - [x] Terrain shading: horizon from 90 m elevation data, full diffuse model, sun-path chart, cached
       profile, shared via link (`hp`)
 - [x] Integration tests: full pipeline for Buenos Aires, Alicante, Fresno, Alice Springs and Tokyo
+- [x] Browser tests (Playwright, desktop and phone) at 11 places, terrain, and the log view; they run in CI before deploy
+- [x] Debug → Log (console, uncaught errors, app events) and a commit hash and date in the header
+- [x] Fixed: "instant.epochMilliseconds must be a safe integer" at most longitudes (sun-path chart)
 
 ## Next candidates (not yet requested unless noted)
 

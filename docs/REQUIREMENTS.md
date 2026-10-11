@@ -53,6 +53,9 @@ this file wins over guesses.
 | Settings | Persist in localStorage, and shareable via the query string (added after v1) |
 | Terrain shading | Horizon from terrain only; full diffuse model; sun-path chart. **Implemented.** See `docs/plans/terrain-shading.md` |
 | Integration tests | Five full calculations: Buenos Aires, Alicante, a point in California (Fresno), a point in Australia (Alice Springs), a point in Japan (Tokyo) |
+| Debug log | Debug → Log shows console output, uncaught errors and app events, with copy for bug reports (requested after a live error) |
+| Version stamp | Header shows the short commit hash and commit date so it's clear when the live app updated |
+| Regression tests | Every bug found gets a test that fails without the fix. Location bugs also get a browser test at that place |
 | Mandatory tests | **Buenos Aires and Alicante are mandatory.** They must always exist, pass and never be skipped or loosened. This is enforced by guard tests, the generator and `npm run check` |
 
 Not chosen so far: seasonal optima, tracking mounts, manual horizon editing.

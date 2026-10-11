@@ -22,7 +22,8 @@ export const REFRACTION_TEMPERATURE_C = 12;
 export function sunPosition(epochMs: number, site: Site, t?: Tracer, pressurePa?: number): SunPosition {
   const p = pressurePa ?? altitudeToPressure(site.altitude);
   const r = calculateSolarPosition({
-    instant: { epochMilliseconds: epochMs },
+    // The library requires whole milliseconds; callers may pass fractional instants.
+    instant: { epochMilliseconds: Math.round(epochMs) },
     observer: {
       latitudeDegrees: site.lat,
       longitudeDegrees: site.lon,

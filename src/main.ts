@@ -1,3 +1,7 @@
+// Start capturing logs before anything else runs, so early errors are kept.
+import { appLog, captureConsole, captureGlobalErrors } from "./ui/logStore";
+captureConsole(appLog);
+captureGlobalErrors(appLog);
 import "./ui/styles.css";
 import {
   WEATHER_SOURCES, buildShading, compare, computeHorizon, createTracer, decodeProfile, encodeProfile, energyKWh, getSource,
@@ -16,6 +20,8 @@ import { horizonKey, readHorizon, writeHorizon, type CachedHorizon } from "./ui/
 import { openMeteoSampler } from "./ui/elevation";
 import { createSunPathChart } from "./ui/sunPath";
 import ComputeWorker from "./worker?worker&inline";
+import { createLogView } from "./ui/logView";
+import { BUILD, commitUrl, formatBuild } from "./ui/buildInfo";
 
 // ---------- state ----------
 // Settings live in ./ui/appState: defaults ← localStorage ← query string.
@@ -181,9 +187,11 @@ async function ensureHorizon(): Promise<HorizonProfile | null> {
     horizonLoadedKey = key;
     writeHorizon(key, horizon);
     describeHorizon(horizon);
+    appLog.add("info", "terrain", `Horizon computed from ${th.samplesUsed} elevation points; highest ${horizonMax(th.profile).elevation.toFixed(1)}°`);
     return horizon.profile;
   } catch (e) {
     if ((e as Error).name === "AbortError" || ctrl.signal.aborted) return null;
+    appLog.add("warn", "terrain", `Elevation download failed: ${(e as Error)?.message ?? e}`, (e as Error)?.stack);
     setMsg(hzMsg, "Couldn't download elevation data (no internet, or the service is busy). Results below ignore terrain; change a setting to try again.", true);
     return null;
   }
@@ -235,6 +243,7 @@ async function recompute() {
       r = worker ? await computeInWorker(site, params, sourceId, profile) : await computeInline(site, params, sourceId, profile);
     } catch (e) {
       if (!worker) throw e;
+      appLog.add("warn", "worker", `Background calculation failed, retrying on the main thread: ${(e as Error)?.message ?? e}`);
       worker = null; // worker blocked or failed: fall back to the main thread
       r = await computeInline(site, params, sourceId, profile);
     }
@@ -242,10 +251,12 @@ async function recompute() {
     const shading = profile ? buildShading(r.weather, profile) : undefined;
     const optYear = simulateYear(r.weather, r.opt.best, params, undefined, shading);
     computed = { ...r, optYear, youYear: optYear, shading };
+    appLog.add("info", "calculation", `Year computed for ${site.lat.toFixed(4)}, ${site.lon.toFixed(4)} (${site.altitude} m)${profile ? ", with terrain" : ""}: optimum ${r.opt.best.tilt}° / ${Math.round(r.opt.best.azimuth)}°, ${r.opt.annual.toFixed(0)} kWh/m²`);
     save(); // URL now carries the profile when shading is on
     refreshDerived();
   } catch (e) {
-    setMsg(locMsg, `Calculation failed: ${(e as Error).message}`, true);
+    appLog.add("error", "calculation", `Calculation failed: ${(e as Error)?.message ?? e}`, (e as Error)?.stack);
+    setMsg(locMsg, `Calculation failed: ${(e as Error).message}. Details in Debug → Log.`, true);
   } finally {
     if (seq === computeSeq) $("busy").hidden = true;
   }
@@ -546,6 +557,14 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
 new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
 // ---------- boot ----------
+createLogView($("log-list"), $("log-filter") as HTMLSelectElement, $<HTMLButtonElement>("btn-log-copy"), $<HTMLButtonElement>("btn-log-clear"), $("log-summary"), $("log-copy-msg"), $("log-badge"));
+{
+  const stamp = $<HTMLAnchorElement>("build-stamp");
+  stamp.textContent = formatBuild(BUILD);
+  stamp.href = commitUrl(BUILD);
+  stamp.title = BUILD.date ? `Commit ${BUILD.commit}, committed ${BUILD.date}` : "Local build";
+}
+appLog.add("info", "app", `Sunward ${formatBuild(BUILD)} started: ${navigator.userAgent}`);
 for (const s of WEATHER_SOURCES) {
   const o = document.createElement("option");
   o.value = s.id;
